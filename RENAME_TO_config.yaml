@@ -1,0 +1,23 @@
+# rename to "config.yaml"
+web_session:
+  key: session_key
+admin:
+  email: admin@admin.com
+  password: admin
+database:
+  host: 127.0.0.1
+  port: 5432
+  user: postgres
+  password: postgres
+  database: postgres
+vk_bot:
+  token: token
+  group_id: group_id
+logger:
+  name: quiz_game
+  file: logger/log.log
+  format: "%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)s (%(funcName)s) | %(message)s"
+swagger:
+  title: Vk Quiz Bot
+  json_url: /docs/json
+  path: /docs
