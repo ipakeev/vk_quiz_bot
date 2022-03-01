@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.database.database import db
+from app.base.database import db
 from app.utils import encode_password
 
 

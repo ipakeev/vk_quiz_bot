@@ -1,4 +1,4 @@
-from app.database.database import db
+from app.base.database import db
 from app.utils import now
 
 
@@ -7,7 +7,7 @@ from app.utils import now
 #     import sqlalchemy as db
 
 
-# При удалении чата удаляляется и игра
+# При удалении чата удаляется и игра
 class GameModel(db.Model):
     __tablename__ = "games"
 
