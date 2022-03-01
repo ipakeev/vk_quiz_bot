@@ -1,10 +1,13 @@
+import json
 import random
 import typing
+from typing import Optional
 
 from aiohttp import ClientSession, TCPConnector
 
-from app.database.accessor import BaseAccessor
-from app.store.vk_api.long_poller import build_query
+from app.base.accessor import BaseAccessor
+from app.store.vk_api.keyboard import Keyboard
+from app.store.vk_api.responses import ConversationMembersResponse
 
 if typing.TYPE_CHECKING:
     from app.web.app import Application
@@ -21,34 +24,69 @@ class VKMessenger(BaseAccessor):
     async def disconnect(self, app: "Application"):
         await self.session.close()
 
-    async def send(self, params: dict, text: str, keyboard=None, inline=False):
-        async with self.session.get(
-                build_query(
-                    self.API_PATH,
-                    "messages.send",
-                    params={
-                        **params,
-                        "random_id": random.randint(1, 2 ** 32),
-                        "message": text,
-                        "access_token": self.app.config.vk_bot.token,
-                    },
-                )
+    def build_query_url(self, method: str, params: dict) -> str:
+        params["access_token"] = self.app.config.vk_bot.token
+        params["v"] = "5.131"
+        return self.API_PATH + method + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
 
-        ) as resp:
-            data = await resp.json()
-            self.app.logger.debug(data)
+    async def query(self, url: str, method="GET") -> dict:
+        async with self.session.request(method, url) as resp:
+            if resp.ok:
+                data = await resp.json()
+                self.app.logger.debug(f"status={resp.status}, method={method}")
+                return data
+            else:
+                self.app.logger.warning(f"status={resp.status}, method={method}, url={url}")
+                return {}
 
-    async def edit(self):
-        pass
+    async def send(self, peer_id: int, message: str, keyboard: Keyboard = None) -> bool:
+        params = {
+            "peer_id": peer_id,
+            "random_id": random.randint(1, 2 ** 32),
+            "message": message,
+        }
+        if keyboard:
+            params["keyboard"] = json.dumps(keyboard.as_dict())
 
-    async def delete(self):
-        pass
+        url = self.build_query_url("messages.send", params)
+        data = await self.query(url, method="POST")
 
-    async def chat_info(self):
-        pass
+        if data.get("response") is not None:
+            self.app.logger.debug("msg sent")
+            return True
+        else:
+            self.app.logger.warning(f"msg not sent ({params})")
+            return False
 
-    async def chat_users(self):
-        pass
+    async def edit(self, peer_id: int, conversation_message_id: int, message: str, keyboard: Keyboard = None) -> bool:
+        params = {
+            "peer_id": peer_id,
+            "conversation_message_id": conversation_message_id,
+            "message": message,
+        }
+        if keyboard:
+            params["keyboard"] = json.dumps(keyboard.as_dict())
 
-    async def user_info(self):
-        pass
+        url = self.build_query_url("messages.edit", params)
+        data = await self.query(url, method="POST")
+
+        if data.get("response") == 1:
+            self.app.logger.debug("msg edited")
+            return True
+        else:
+            # {'error': {'error_code': 15, 'error_msg': 'Access denied'}}
+            self.app.logger.info(f"msg not found ({params})")
+            return False
+
+    async def get_conversation_members(self, peer_id: int) -> Optional[ConversationMembersResponse]:
+        params = {
+            "peer_id": peer_id,
+        }
+        url = self.build_query_url("messages.getConversationMembers", params)
+        data = await self.query(url, method="GET")
+
+        if data.get("error"):
+            # нет прав доступа
+            return None
+
+        return ConversationMembersResponse(data)

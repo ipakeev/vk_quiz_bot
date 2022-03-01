@@ -36,6 +36,7 @@ class Database:
         if self.is_connected:
             self.app.logger.warning("connection already exist!")
             return
+        self.app.logger.debug("connecting to the database")
 
         self.db = db
         await self.db.set_bind(
@@ -58,6 +59,7 @@ class Database:
         if not self.is_connected:
             self.app.logger.warning("connection is not exist!")
             return
+        self.app.logger.debug("disconnecting from the database")
 
         await self.db.pop_bind().close()
         self.is_connected = False

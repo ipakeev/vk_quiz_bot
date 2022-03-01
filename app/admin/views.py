@@ -13,6 +13,7 @@ class AdminLoginView(View):
     @response_schema(schemes.AdminLoginResponseSchema)
     async def post(self):
         data = self.data
+        self.request.app.logger.debug(f"post AdminLoginView: {data}")
 
         # get credentials
         email = data["email"]
@@ -25,7 +26,7 @@ class AdminLoginView(View):
 
         # create new session (set cookies) and bind with admin
         session = await aiohttp_session.new_session(self.request)
-        session['admin_email'] = admin.email
+        session["admin_email"] = admin.email
 
         return json_response(
             data=schemes.AdminSchema().dump(admin),
@@ -40,8 +41,9 @@ class AdminCurrentView(View):
     @docs(description="Info about current admin.")
     @response_schema(schemes.AdminCurrentViewResponseSchema)
     async def get(self):
+        self.request.app.logger.debug("get AdminCurrentView")
         session = await aiohttp_session.get_session(self.request)
-        admin = await self.store.admins.get_by_email(session.get('admin_email'))
+        admin = await self.store.admins.get_by_email(session.get("admin_email"))
         return json_response(
             data=schemes.AdminSchema().dump(admin),
         )

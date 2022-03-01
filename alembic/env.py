@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
-from app.database.database import db, register_models
+from app.base.database import db, register_models
 from app.web.config import DatabaseConfig
 
 register_models()
@@ -14,7 +14,7 @@ register_models()
 config_file = pathlib.Path(__file__).resolve().parent.parent / 'config.yaml'
 with open(config_file) as f:
     raw_config = yaml.safe_load(f)
-    db_config = DatabaseConfig(**raw_config['database'])
+    db_config = DatabaseConfig(**raw_config['base'])
 
 
 def set_sqlalchemy_ulr(dbc: DatabaseConfig):

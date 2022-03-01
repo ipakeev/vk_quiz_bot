@@ -16,7 +16,7 @@ vk_bot:
 logger:
   name: quiz_game
   file: logger/log.log
-  format: "%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)s (%(funcName)s) | %(message)s"
+  format: "%(asctime)s | %(levelname)s | %(filename)s:%(lineno)s (%(funcName)s) | %(message)s"
 swagger:
   title: Vk Quiz Bot
   json_url: /docs/json

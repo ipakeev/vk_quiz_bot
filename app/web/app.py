@@ -1,6 +1,7 @@
+import logging
 import pathlib
 from typing import Union
-import logging
+
 from aiohttp.web import (
     Application as AiohttpApplication,
     View as AiohttpView,
@@ -10,7 +11,7 @@ from aiohttp_apispec import setup_aiohttp_apispec
 from aiohttp_session import setup as setup_session
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
 
-from app.database.database import Database
+from app.base.database import Database
 from app.store.store import Store
 from app.web.config import Config, setup_config
 from logger import setup_logger

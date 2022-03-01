@@ -1,8 +1,8 @@
 from typing import Optional
 
-from app.database.accessor import BaseAccessor
+from app.base.accessor import BaseAccessor
 from app.quiz.models import (
-    ThemeDC, ThemeModel,
+    ThemeDC, ThemeModel, ThemesListDC,
     QuestionDC, QuestionModel, QuestionsListDC,
     AnswerDC, AnswerModel,
 )
@@ -24,14 +24,14 @@ class QuizAccessor(BaseAccessor):
         if theme_model:
             return theme_model.as_dataclass()
 
-    async def list_themes(self) -> list[ThemeDC]:
+    async def list_themes(self) -> ThemesListDC:
         theme_models: list[ThemeModel] = await ThemeModel.query.gino.all()
-        return [i.as_dataclass() for i in theme_models]
+        return ThemesListDC(themes=[i.as_dataclass() for i in theme_models])
 
     async def create_question(self, theme_id: int, title: str, price: int, answers: list[AnswerDC]) -> QuestionDC:
         question_model: QuestionModel = await QuestionModel.create(theme_id=theme_id, title=title, price=price)
-        await self.create_answers(question_model.id, answers)
-        return question_model.as_dataclass(answers=answers)
+        answer_models = await self.create_answers(question_model.id, answers)
+        return question_model.as_dataclass(answer_models=answer_models)
 
     async def get_question_by_title(self, title: str) -> Optional[QuestionDC]:
         question_model: QuestionModel = await QuestionModel.query.where(QuestionModel.title == title).gino.first()
@@ -39,27 +39,24 @@ class QuizAccessor(BaseAccessor):
             answer_models: list[AnswerModel] = await AnswerModel.query.where(
                 AnswerModel.question_id == question_model.id
             ).gino.all()
-            return question_model.as_dataclass(answers=[i.as_dataclass() for i in answer_models])
+            return question_model.as_dataclass(answer_models=answer_models)
 
     async def list_questions(self, theme_id: Optional[int] = None) -> QuestionsListDC:
-        if theme_id is None:
-            question_models: list[QuestionModel] = await QuestionModel.query.gino.all()
-        else:
-            question_models: list[QuestionModel] = await QuestionModel.query.where(
-                QuestionModel.theme_id == theme_id
-            ).gino.all()
-        questions = []
-        for q in question_models:
-            answer_models: list[AnswerModel] = await AnswerModel.query.where(
-                AnswerModel.question_id == q.id
-            ).gino.all()
-            questions.append(
-                q.as_dataclass(answers=[i.as_dataclass() for i in answer_models])
+        query = QuestionModel.join(AnswerModel, QuestionModel.id == AnswerModel.question_id)
+        if theme_id is not None:
+            query = query.where(QuestionModel.theme_id == theme_id)
+        questions: list[QuestionModel] = await query.select().gino.load(
+            QuestionModel.distinct(QuestionModel.id).load(
+                add_answer=AnswerModel.load()
             )
-        return QuestionsListDC(questions=questions)
+        ).all()
+        return QuestionsListDC(questions=[i.as_dataclass() for i in questions])
 
-    async def create_answers(self, question_id, answers: list[AnswerDC]):
-        for answer in answers:
-            await AnswerModel.create(question_id=question_id,
-                                     title=answer.title,
-                                     is_correct=answer.is_correct)
+    async def create_answers(self, question_id, answers: list[AnswerDC]) -> list[AnswerModel]:
+        models = []
+        for answer_dc in answers:
+            answer_model = await AnswerModel.create(question_id=question_id,
+                                                    title=answer_dc.title,
+                                                    is_correct=answer_dc.is_correct)
+            models.append(answer_model)
+        return models

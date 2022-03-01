@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from aiohttp import ClientSession, TCPConnector
 
-from app.database.accessor import BaseAccessor
+from app.base.accessor import BaseAccessor
 
 if typing.TYPE_CHECKING:
     from app.web.app import Application
@@ -75,9 +75,13 @@ class VKLongPoller(BaseAccessor):
         ) as resp:
             data = await resp.json()
             self.app.logger.info(data)
-            self.poll_service_config.ts = data["ts"]
-            raw_updates = data.get("updates", [])
-            await self.app.store.vk_response_handler.handle_updates(raw_updates)
+            if "ts" in data:
+                self.poll_service_config.ts = data["ts"]
+                for update in data.get("updates", []):
+                    await self.app.store.vk_updates_queue.put(update)
+            else:
+                # failed
+                await self.init_long_poll_service()
 
 
 class LongPollingLoop:

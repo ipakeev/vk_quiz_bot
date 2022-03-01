@@ -67,6 +67,9 @@ async def error_handling_middleware(request: "Request", handler):
             status_code=409,
             message=e.text,
         )
+    except Exception as e:
+        request.app.logger.exception(e)
+        raise e
 
 
 @web.middleware

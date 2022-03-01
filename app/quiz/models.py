@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.database.database import db
+from app.base.database import db
 from app.utils import now
 
 
@@ -18,7 +18,7 @@ class ThemeDC:
 
 
 @dataclass
-class ListThemesDC:
+class ThemesListDC:
     themes: list[ThemeDC]
 
 
@@ -55,8 +55,24 @@ class QuestionModel(db.Model):
     title = db.Column(db.String(), nullable=False)
     price = db.Column(db.Integer(), nullable=False)
 
-    def as_dataclass(self, answers: list["AnswerDC"]) -> QuestionDC:
-        return QuestionDC(id=self.id, theme_id=self.theme_id, title=self.title, price=self.price, answers=answers)
+    def __init__(self, *args, **kwargs):
+        super(QuestionModel, self).__init__(*args, **kwargs)
+        self._answers: list["AnswerModel"] = []
+
+    @property
+    def answers(self) -> list["AnswerModel"]:
+        return self._answers
+
+    # noinspection PyPropertyDefinition
+    @answers.setter
+    def add_answer(self, answer: "AnswerModel"):
+        print('@answers.setter', answer.as_dataclass())
+        self._answers.append(answer)
+
+    def as_dataclass(self, answer_models: list["AnswerModel"] = None) -> QuestionDC:
+        answer_models = answer_models or self.answers
+        answer_dcs = [i.as_dataclass() for i in answer_models]
+        return QuestionDC(id=self.id, theme_id=self.theme_id, title=self.title, price=self.price, answers=answer_dcs)
 
 
 @dataclass
