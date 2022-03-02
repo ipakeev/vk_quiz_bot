@@ -7,7 +7,7 @@ from typing import Optional, Union
 from app.base.accessor import BaseAccessor
 from app.store.vk_api import events
 from app.store.vk_api.events import BaseEvent
-from app.store.vk_api.keyboard import Keyboard, CallbackButton
+from app.store.vk_api.keyboard import Keyboard, CallbackButton, ButtonColor
 from app.store.vk_api.responses import ConversationMembersResponse
 
 if typing.TYPE_CHECKING:
@@ -20,7 +20,7 @@ class Subscriber:
     func: Callable[[BaseEvent], Awaitable[None]]
 
 
-def dummy(_: BaseEvent) -> bool:
+def dummy_condition(_: BaseEvent) -> bool:
     return True
 
 
@@ -33,7 +33,7 @@ class VKBot(BaseAccessor):
         self._message_callback_subscribers: list[Subscriber] = []
 
     def on_chat_invite_request(self, condition: Optional[Callable[[BaseEvent], bool]] = None):
-        condition = condition or dummy
+        condition = condition or dummy_condition
 
         def decorator(func: Callable[[BaseEvent], Awaitable[None]]):
             self._chat_invite_request_subscribers.append(
@@ -49,7 +49,7 @@ class VKBot(BaseAccessor):
         return decorator
 
     def on_message_text(self, condition: Optional[Callable[[BaseEvent], bool]] = None):
-        condition = condition or dummy
+        condition = condition or dummy_condition
 
         def decorator(func: Callable[[BaseEvent], Awaitable[None]]):
             self._message_text_subscribers.append(
@@ -65,7 +65,7 @@ class VKBot(BaseAccessor):
         return decorator
 
     def on_message_callback(self, condition: Optional[Callable[[BaseEvent], bool]] = None):
-        condition = condition or dummy
+        condition = condition or dummy_condition
 
         def decorator(func: Callable[[BaseEvent], Awaitable[None]]):
             self._message_callback_subscribers.append(
@@ -84,34 +84,38 @@ class VKBot(BaseAccessor):
         if isinstance(event, events.ChatInviteRequest):
             for subscriber in self._chat_invite_request_subscribers:
                 if subscriber.condition(event):
-                    await subscriber.func(event)
-                    return
+                    return await subscriber.func(event)
         elif isinstance(event, events.MessageText):
             for subscriber in self._message_text_subscribers:
                 if subscriber.condition(event):
-                    await subscriber.func(event)
-                    return
+                    return await subscriber.func(event)
         elif isinstance(event, events.MessageCallback):
             for subscriber in self._message_callback_subscribers:
                 if subscriber.condition(event):
-                    await subscriber.func(event)
-                    return
+                    return await subscriber.func(event)
         else:
             self.app.logger.warning(f"unknown event: {event}")
 
 
+class GameCommands:
+    start = "start"
+    stop = "stop"
+
+
 def register_bot_actions(bot: VKBot):
     keyboard_start = Keyboard(inline=True, buttons=[
-        [CallbackButton("start", payload={"action": "start"})],
+        [CallbackButton("😍 start", payload={"action": GameCommands.start}, color=ButtonColor.green)],
     ])
     keyboard_stop = Keyboard(inline=True, buttons=[
-        [CallbackButton("stop", payload={"action": "stop"})],
+        [CallbackButton("😎 stop", payload={"action": GameCommands.stop}, color=ButtonColor.red)],
     ])
 
     def bot_is_admin(members: Optional[ConversationMembersResponse]) -> bool:
         if not members:
             return False
-        return -bot.app.config.vk_bot.group_id in members.admin_ids
+        # Для сообщества: -id сообщества
+        group_id_as_member = -bot.app.config.vk_bot.group_id
+        return group_id_as_member in members.admin_ids
 
     @bot.on_chat_invite_request()
     async def invited(msg: events.ChatInviteRequest):
@@ -120,10 +124,10 @@ def register_bot_actions(bot: VKBot):
                        "Как всё будет готово - нажимай на кнопку.",
                        keyboard=keyboard_start)
 
-    @bot.on_message_text(lambda i: i.text.lower() in ["старт", "start"])
-    @bot.on_message_callback(lambda i: i.payload.get("action") == "start")
+    @bot.on_message_text(lambda i: i.text.lower() == GameCommands.start)
+    @bot.on_message_callback(lambda i: i.payload.get("action") == GameCommands.start)
     async def start(msg: Union[events.MessageText, events.MessageCallback]):
-        members = await bot.app.store.vk_messenger.get_conversation_members(msg.peer_id)
+        members = await msg.app.store.vk_messenger.get_conversation_members(msg.peer_id)
         if not bot_is_admin(members):
             await msg.send("Без прав администратора беседы я не смогу начать игру.")
             return
@@ -137,8 +141,8 @@ def register_bot_actions(bot: VKBot):
 
         await msg.send("Поехали")
 
-    @bot.on_message_text(lambda i: i.text.lower() in ["стоп", "stop"])
-    @bot.on_message_callback(lambda i: i.payload.get("action") == "stop")
+    @bot.on_message_text(lambda i: i.text.lower() == GameCommands.stop)
+    @bot.on_message_callback(lambda i: i.payload.get("action") == GameCommands.stop)
     async def stop(msg: Union[events.MessageText, events.MessageCallback]):
         if isinstance(msg, events.MessageCallback):
             await msg.edit("Для начала игры нажми на кнопку", keyboard=keyboard_start)

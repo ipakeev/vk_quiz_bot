@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 
 from app.base.database import db
 from app.utils import now
@@ -63,13 +64,11 @@ class QuestionModel(db.Model):
     def answers(self) -> list["AnswerModel"]:
         return self._answers
 
-    # noinspection PyPropertyDefinition
     @answers.setter
-    def add_answer(self, answer: "AnswerModel"):
-        print('@answers.setter', answer.as_dataclass())
+    def answers(self, answer: "AnswerModel"):
         self._answers.append(answer)
 
-    def as_dataclass(self, answer_models: list["AnswerModel"] = None) -> QuestionDC:
+    def as_dataclass(self, answer_models: Optional[list["AnswerModel"]] = None) -> QuestionDC:
         answer_models = answer_models or self.answers
         answer_dcs = [i.as_dataclass() for i in answer_models]
         return QuestionDC(id=self.id, theme_id=self.theme_id, title=self.title, price=self.price, answers=answer_dcs)

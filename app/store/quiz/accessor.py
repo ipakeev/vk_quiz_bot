@@ -1,4 +1,5 @@
 from typing import Optional
+from sqlalchemy.dialects.postgresql import insert
 
 from app.base.accessor import BaseAccessor
 from app.quiz.models import (
@@ -11,7 +12,13 @@ from app.quiz.models import (
 class QuizAccessor(BaseAccessor):
 
     async def create_theme(self, title: str) -> ThemeDC:
-        theme_model: ThemeModel = await ThemeModel.create(title=title)
+        # за один поход в базу добавляем тему (либо обновляем, если данная тема уже есть)
+        # on_conflict_do_nothing не возвращает ничего, поэтому используем on_conflict_do_update
+        stmt = insert(ThemeModel).values(title=title)
+        query = stmt.on_conflict_do_update(
+            index_elements=[ThemeModel.title], set_=dict(title=stmt.excluded.title)
+        ).returning(*ThemeModel)
+        theme_model: ThemeModel = await query.gino.model(ThemeModel).first()
         return theme_model.as_dataclass()
 
     async def get_theme_by_title(self, title: str) -> Optional[ThemeDC]:
@@ -42,12 +49,12 @@ class QuizAccessor(BaseAccessor):
             return question_model.as_dataclass(answer_models=answer_models)
 
     async def list_questions(self, theme_id: Optional[int] = None) -> QuestionsListDC:
-        query = QuestionModel.join(AnswerModel, QuestionModel.id == AnswerModel.question_id)
+        query = QuestionModel.join(AnswerModel, QuestionModel.id == AnswerModel.question_id).select()
         if theme_id is not None:
             query = query.where(QuestionModel.theme_id == theme_id)
-        questions: list[QuestionModel] = await query.select().gino.load(
+        questions: list[QuestionModel] = await query.gino.load(
             QuestionModel.distinct(QuestionModel.id).load(
-                add_answer=AnswerModel.load()
+                answers=AnswerModel.load()
             )
         ).all()
         return QuestionsListDC(questions=[i.as_dataclass() for i in questions])
