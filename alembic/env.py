@@ -14,7 +14,7 @@ register_models()
 config_file = pathlib.Path(__file__).resolve().parent.parent / 'config.yaml'
 with open(config_file) as f:
     raw_config = yaml.safe_load(f)
-    db_config = DatabaseConfig(**raw_config['base'])
+    db_config = DatabaseConfig(**raw_config['database'])
 
 
 def set_sqlalchemy_ulr(dbc: DatabaseConfig):

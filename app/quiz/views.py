@@ -21,12 +21,7 @@ class ThemeAddView(View):
         data = self.data
         self.request.app.logger.debug(f"post ThemeAddView: {data}")
 
-        title = data["title"]
-
-        if await self.store.quiz.get_theme_by_title(title):
-            raise web_exceptions.HTTPConflict(text="The theme exists.")
-
-        theme = await self.store.quiz.create_theme(title=title)
+        theme = await self.store.quiz.create_theme(title=data["title"])
         return json_response(
             data=schemes.ThemeSchema().dump(theme),
         )
@@ -93,9 +88,7 @@ class QuestionListView(View):
     @response_schema(schemes.ListQuestionResponseSchema)
     async def get(self):
         self.request.app.logger.debug("get QuestionListView")
-        theme_id = self.request.query.get("theme_id")
-        if theme_id is not None:
-            theme_id = int(theme_id)
+        theme_id = schemes.QueryThemeIdSchema().load(self.request.query).get("theme_id")
         questions = await self.store.quiz.list_questions(theme_id)
         return json_response(
             data=schemes.ListQuestionSchema().dump(questions),

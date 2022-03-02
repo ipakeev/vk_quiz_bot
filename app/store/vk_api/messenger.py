@@ -30,14 +30,15 @@ class VKMessenger(BaseAccessor):
         return self.API_PATH + method + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
 
     async def query(self, url: str, method="GET") -> dict:
+        # TODO: catch exceptions
         async with self.session.request(method, url) as resp:
-            if resp.ok:
-                data = await resp.json()
-                self.app.logger.debug(f"status={resp.status}, method={method}")
-                return data
-            else:
+            if not resp.ok:
                 self.app.logger.warning(f"status={resp.status}, method={method}, url={url}")
                 return {}
+
+            data = await resp.json()
+            self.app.logger.debug(f"status={resp.status}, method={method}")
+            return data
 
     async def send(self, peer_id: int, message: str, keyboard: Keyboard = None) -> bool:
         params = {
@@ -49,14 +50,14 @@ class VKMessenger(BaseAccessor):
             params["keyboard"] = json.dumps(keyboard.as_dict())
 
         url = self.build_query_url("messages.send", params)
-        data = await self.query(url, method="POST")
+        response = await self.query(url, method="POST")
 
-        if data.get("response") is not None:
+        if response.get("error"):
+            self.app.logger.warning(f"msg not sent: {response}, params=({params})")
+            return False
+        else:
             self.app.logger.debug("msg sent")
             return True
-        else:
-            self.app.logger.warning(f"msg not sent ({params})")
-            return False
 
     async def edit(self, peer_id: int, conversation_message_id: int, message: str, keyboard: Keyboard = None) -> bool:
         params = {
@@ -68,25 +69,25 @@ class VKMessenger(BaseAccessor):
             params["keyboard"] = json.dumps(keyboard.as_dict())
 
         url = self.build_query_url("messages.edit", params)
-        data = await self.query(url, method="POST")
+        response = await self.query(url, method="POST")
 
-        if data.get("response") == 1:
+        if response.get("error"):
+            self.app.logger.warning(f"msg not edited: {response}, params=({params})")
+            return False
+        else:
             self.app.logger.debug("msg edited")
             return True
-        else:
-            # {'error': {'error_code': 15, 'error_msg': 'Access denied'}}
-            self.app.logger.info(f"msg not found ({params})")
-            return False
 
     async def get_conversation_members(self, peer_id: int) -> Optional[ConversationMembersResponse]:
         params = {
             "peer_id": peer_id,
         }
         url = self.build_query_url("messages.getConversationMembers", params)
-        data = await self.query(url, method="GET")
+        response = await self.query(url, method="GET")
 
-        if data.get("error"):
-            # нет прав доступа
+        if response.get("error"):
+            # как правило, нет прав доступа
+            self.app.logger.warning(f"{response}, params=({params})")
             return None
 
-        return ConversationMembersResponse(data)
+        return ConversationMembersResponse(response)
