@@ -18,10 +18,13 @@ class ThemeAddView(View):
     @request_schema(schemes.AddThemeRequestSchema)
     @response_schema(schemes.AddThemeResponseSchema)
     async def post(self):
-        title = self.data['title']
+        data = self.data
+        self.request.app.logger.debug(f"post ThemeAddView: {data}")
+
+        title = data["title"]
 
         if await self.store.quiz.get_theme_by_title(title):
-            raise web_exceptions.HTTPConflict(text='The theme exists.')
+            raise web_exceptions.HTTPConflict(text="The theme exists.")
 
         theme = await self.store.quiz.create_theme(title=title)
         return json_response(
@@ -34,10 +37,10 @@ class ThemeListView(View):
     @docs(description="Return list of all themes.")
     @response_schema(schemes.ThemeListResponseSchema)
     async def get(self):
-        themes = await self.store.quiz.list_themes()
-        themes = models.ListThemesDC(themes=themes)
+        self.request.app.logger.debug("get ThemeListview")
+        list_themes = await self.store.quiz.list_themes()
         return json_response(
-            data=schemes.ThemeListSchema().dump(themes),
+            data=schemes.ThemeListSchema().dump(list_themes),
         )
 
     async def post(self):
@@ -55,6 +58,8 @@ class QuestionAddView(View):
     @response_schema(schemes.AddQuestionResponseSchema)
     async def post(self):
         data = self.data
+        self.request.app.logger.debug(f"post QuestionAddView: {data}")
+
         theme_id = data["theme_id"]
         title = data["title"]
         price = data["price"]
@@ -87,7 +92,8 @@ class QuestionListView(View):
     @querystring_schema(schemes.QueryThemeIdSchema)
     @response_schema(schemes.ListQuestionResponseSchema)
     async def get(self):
-        theme_id = self.request.query.get('theme_id')
+        self.request.app.logger.debug("get QuestionListView")
+        theme_id = self.request.query.get("theme_id")
         if theme_id is not None:
             theme_id = int(theme_id)
         questions = await self.store.quiz.list_questions(theme_id)
