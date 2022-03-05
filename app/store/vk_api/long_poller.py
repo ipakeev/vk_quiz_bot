@@ -74,7 +74,6 @@ class VKLongPoller(BaseAccessor):
                 )
         ) as resp:
             data = await resp.json()
-            self.app.logger.info(data)
             if "ts" in data:
                 self.poll_service_config.ts = data["ts"]
                 for update in data.get("updates", []):

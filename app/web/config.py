@@ -20,24 +20,37 @@ class AdminConfig:
     password: str
 
 
-@dataclass
+@dataclass(init=False)
 class DatabaseConfig:
     host: str
     port: int
-    user: str
+    username: str
     password: str
     database: str
 
     # validate
-    def __init__(self, host: str, port: int, user: str, password: str, database: str):
+    def __init__(self, host: str, port: int, username: str, password: str, database: str):
         self.host = str(host)
         self.port = int(port)
-        self.user = str(user)
+        self.username = str(username)
         self.password = str(password)
         self.database = str(database)
 
 
-@dataclass
+@dataclass(init=False)
+class RedisConfig:
+    host: str
+    port: int
+    db: int
+
+    # validate
+    def __init__(self, host: str, port: int, db: int):
+        self.host = str(host)
+        self.port = int(port)
+        self.db = int(db)
+
+
+@dataclass(init=False)
 class VKBotConfig:
     token: str
     group_id: int
@@ -67,6 +80,7 @@ class Config:
     web_session: WebSessionConfig
     admin: AdminConfig
     database: DatabaseConfig
+    redis: RedisConfig
     vk_bot: VKBotConfig
     logger: LoggerConfig
     swagger: SwaggerConfig
@@ -80,6 +94,7 @@ def setup_config(app: "Application", config_file: Union[str, pathlib.Path]):
         web_session=WebSessionConfig(**raw_yaml["web_session"]),
         admin=AdminConfig(**raw_yaml["admin"]),
         database=DatabaseConfig(**raw_yaml["database"]),
+        redis=RedisConfig(**raw_yaml["redis"]),
         vk_bot=VKBotConfig(**raw_yaml["vk_bot"]),
         logger=LoggerConfig(**raw_yaml["logger"]),
         swagger=SwaggerConfig(**raw_yaml["swagger"])

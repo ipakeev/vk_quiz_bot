@@ -35,6 +35,7 @@ class ThemeListResponseSchema(OkResponseSchema):
 class AnswerSchema(Schema):
     title = fields.Str(required=True)
     is_correct = fields.Bool(required=True)
+    description = fields.Str(required=False)
 
 
 # ----------------------------------------------------
@@ -44,7 +45,6 @@ class QuestionSchema(Schema):
     id = fields.Int(required=False)
     theme_id = fields.Int(required=True)
     title = fields.Str(required=True, validate=validate.Length(min=1))
-    price = fields.Int(required=True)
     answers = fields.Nested(AnswerSchema, required=True, many=True, validate=validate.Length(equal=4))
 
 

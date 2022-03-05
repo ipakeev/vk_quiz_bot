@@ -1,4 +1,5 @@
 from typing import Optional
+
 from sqlalchemy.dialects.postgresql import insert
 
 from app.base.accessor import BaseAccessor
@@ -33,9 +34,11 @@ class QuizAccessor(BaseAccessor):
 
     async def list_themes(self) -> ThemesListDC:
         theme_models: list[ThemeModel] = await ThemeModel.query.gino.all()
+        # используется ThemesListDC, так как при list[ThemeDC] marshmallow.dump() не выдает результат
         return ThemesListDC(themes=[i.as_dataclass() for i in theme_models])
 
     async def create_question(self, theme_id: int, title: str, price: int, answers: list[AnswerDC]) -> QuestionDC:
+        # валидация того, что данный вопрос с ответами уже есть в базе, происходит на уровне view
         question_model: QuestionModel = await QuestionModel.create(theme_id=theme_id, title=title, price=price)
         answer_models = await self.create_answers(question_model.id, answers)
         return question_model.as_dataclass(answer_models=answer_models)
@@ -60,10 +63,9 @@ class QuizAccessor(BaseAccessor):
         return QuestionsListDC(questions=[i.as_dataclass() for i in questions])
 
     async def create_answers(self, question_id, answers: list[AnswerDC]) -> list[AnswerModel]:
-        models = []
-        for answer_dc in answers:
-            answer_model = await AnswerModel.create(question_id=question_id,
-                                                    title=answer_dc.title,
-                                                    is_correct=answer_dc.is_correct)
-            models.append(answer_model)
-        return models
+        # за один поход в базу добавляем все ответы
+        # валидация того, что данный вопрос с ответами уже есть в базе, происходит на уровне view
+        # on_conflict_do_update требует уникальный ключ. Значит, необходимо изменить первичный ключ модели?
+        await AnswerModel.insert().gino.all([dict(question_id=question_id, **i.as_dict()) for i in answers])
+        answer_models = await AnswerModel.query.where(AnswerModel.question_id == question_id).gino.all()
+        return answer_models

@@ -8,6 +8,13 @@ if typing.TYPE_CHECKING:
     from app.web.app import Application
 
 
+class EventType:
+    chat_invite_user = "chat_invite_user"
+    message_new = "message_new"
+    message_event = "message_event"
+    message_edit = "message_edit"
+
+
 class VKUpdatesPoller(BaseAccessor):
     task: asyncio.Task
 
@@ -33,17 +40,19 @@ class VKUpdatesPoller(BaseAccessor):
 
     async def handle_update(self, update: dict):
         event_type = update.get("type")
-        if event_type == "message_new":
-            if update.get("object", {}).get("message", {}).get("action", {}).get("type") == "chat_invite_user":
+        if event_type == EventType.message_new:
+            if update["object"]["message"].get("action", {}).get("type") == EventType.chat_invite_user:
                 event = events.ChatInviteRequest(update, self.app)
             else:
                 event = events.MessageText(update, self.app)
-        elif event_type == "message_event":
+        elif event_type == EventType.message_event:
             event = events.MessageCallback(update, self.app)
-        elif event_type == "message_edit":
+        elif event_type == EventType.message_edit:
+            self.app.logger.debug("skip")
             return
         else:
             self.app.logger.warning(f"unknown update: {update}")
             return
-        self.app.logger.debug(event)
-        await self.app.store.vk_bot.handle_event(event)
+
+        # нам не нужно дожидаться завершения обработки event'а
+        asyncio.create_task(self.app.store.vk_bot.handle_event(event))

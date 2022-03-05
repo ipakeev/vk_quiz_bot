@@ -1,8 +1,8 @@
-"""20220227_start_project
+"""20220304_start
 
-Revision ID: 9c40dd121c3e
+Revision ID: 2c0558766394
 Revises: 
-Create Date: 2022-02-27 12:00:40.986755
+Create Date: 2022-03-04 15:23:50.798220
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '9c40dd121c3e'
+revision = '2c0558766394'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -27,7 +27,7 @@ def upgrade():
     )
     op.create_table('chats',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('joined_at', sa.DateTime(), nullable=True),
+    sa.Column('joined_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('themes',
@@ -41,14 +41,14 @@ def upgrade():
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('first_name', sa.String(), nullable=False),
     sa.Column('last_name', sa.String(), nullable=False),
-    sa.Column('joined_at', sa.DateTime(), nullable=True),
+    sa.Column('joined_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('games',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('chat_id', sa.Integer(), nullable=False),
     sa.Column('is_stopped', sa.Boolean(), nullable=True),
-    sa.Column('started_at', sa.DateTime(), nullable=True),
+    sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['chat_id'], ['chats.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -65,6 +65,7 @@ def upgrade():
     sa.Column('question_id', sa.Integer(), nullable=False),
     sa.Column('title', sa.String(), nullable=False),
     sa.Column('is_correct', sa.Boolean(), nullable=False),
+    sa.Column('description', sa.String(), nullable=True),
     sa.ForeignKeyConstraint(['question_id'], ['questions.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -84,7 +85,7 @@ def upgrade():
     sa.Column('question_id', sa.Integer(), nullable=False),
     sa.Column('is_answered', sa.Boolean(), nullable=True),
     sa.Column('is_done', sa.Boolean(), nullable=True),
-    sa.Column('started_at', sa.DateTime(), nullable=True),
+    sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['game_id'], ['games.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['question_id'], ['questions.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')

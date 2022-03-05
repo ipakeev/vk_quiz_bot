@@ -6,8 +6,8 @@ from typing import Optional
 from aiohttp import ClientSession, TCPConnector
 
 from app.base.accessor import BaseAccessor
-from app.store.vk_api.keyboard import Keyboard
-from app.store.vk_api.responses import ConversationMembersResponse
+from app.store.vk_api.keyboard import Keyboard, Carousel
+from app.store.vk_api.responses import VKUser
 
 if typing.TYPE_CHECKING:
     from app.web.app import Application
@@ -40,14 +40,46 @@ class VKMessenger(BaseAccessor):
             self.app.logger.debug(f"status={resp.status}, method={method}")
             return data
 
-    async def send(self, peer_id: int, message: str, keyboard: Keyboard = None) -> bool:
+    async def send_sticker(self, chat_id: int, sticker_id: int):
+        """
+        В сообщении со стикером можно посылать клавиатуру, но нельзя редактировать,
+        поэтому, чтобы исключить ошибки, реализуем метод отправки ТОЛЬКО стикера
+        (без клавиатуры или карусели).
+        """
         params = {
-            "peer_id": peer_id,
+            "peer_id": chat_id,
+            "random_id": random.randint(1, 2 ** 32),
+            "sticker_id": sticker_id,
+        }
+
+        url = self.build_query_url("messages.send", params)
+        response = await self.query(url, method="POST")
+
+        if response.get("error"):
+            self.app.logger.warning(f"sticker not sent: {response}, params=({params})")
+            return False
+        else:
+            self.app.logger.debug("sticker sent")
+            return True
+
+    async def send(self,
+                   chat_id: int,
+                   message: str,
+                   photo: Optional[str] = None,
+                   keyboard: Optional[Keyboard] = None,
+                   carousel: Optional[Carousel] = None) -> bool:
+        assert not (keyboard and carousel)
+        params = {
+            "peer_id": chat_id,
             "random_id": random.randint(1, 2 ** 32),
             "message": message,
         }
+        if photo:
+            params["attachment"] = photo
         if keyboard:
             params["keyboard"] = json.dumps(keyboard.as_dict())
+        if carousel:
+            params["template"] = json.dumps(carousel.as_dict())
 
         url = self.build_query_url("messages.send", params)
         response = await self.query(url, method="POST")
@@ -59,14 +91,25 @@ class VKMessenger(BaseAccessor):
             self.app.logger.debug("msg sent")
             return True
 
-    async def edit(self, peer_id: int, conversation_message_id: int, message: str, keyboard: Keyboard = None) -> bool:
+    async def edit(self,
+                   chat_id: int,
+                   conversation_message_id: int,
+                   message: str,
+                   photo: Optional[str] = None,
+                   keyboard: Optional[Keyboard] = None,
+                   carousel: Optional[Carousel] = None) -> bool:
+        assert not (keyboard and carousel)
         params = {
-            "peer_id": peer_id,
+            "peer_id": chat_id,
             "conversation_message_id": conversation_message_id,
             "message": message,
         }
+        if photo:
+            params["attachment"] = photo
         if keyboard:
             params["keyboard"] = json.dumps(keyboard.as_dict())
+        if carousel:
+            params["template"] = json.dumps(carousel.as_dict())
 
         url = self.build_query_url("messages.edit", params)
         response = await self.query(url, method="POST")
@@ -78,16 +121,69 @@ class VKMessenger(BaseAccessor):
             self.app.logger.debug("msg edited")
             return True
 
-    async def get_conversation_members(self, peer_id: int) -> Optional[ConversationMembersResponse]:
+    async def delete(self, chat_id: int, conversation_message_id: int):
         params = {
-            "peer_id": peer_id,
+            "peer_id": chat_id,
+            "cmids": str(conversation_message_id),
+            "delete_for_all": 1,
         }
-        url = self.build_query_url("messages.getConversationMembers", params)
+
+        url = self.build_query_url("messages.delete", params)
+        response = await self.query(url, method="POST")
+
+        if response.get("error"):
+            self.app.logger.warning(f"msg not deleted: {response}, params=({params})")
+            return False
+        else:
+            self.app.logger.debug("msg deleted")
+            return True
+
+    async def event_ok(self, chat_id: int, user_id: int, event_id: str) -> bool:
+        params = {
+            "peer_id": chat_id,
+            "user_id": user_id,
+            "event_id": event_id,
+        }
+        url = self.build_query_url("messages.sendMessageEventAnswer", params)
+        response = await self.query(url, method="POST")
+
+        if response.get("error"):
+            self.app.logger.warning(f"error on event_ok: {response}, params=({params})")
+            return False
+        else:
+            self.app.logger.debug("event_ok")
+            return True
+
+    async def show_snackbar(self, chat_id: int, user_id: int, event_id: str, message: str) -> bool:
+        params = {
+            "peer_id": chat_id,
+            "user_id": user_id,
+            "event_id": event_id,
+            "event_data": json.dumps({
+                "type": "show_snackbar",
+                "text": message,
+            }),
+        }
+        url = self.build_query_url("messages.sendMessageEventAnswer", params)
+        response = await self.query(url, method="POST")
+
+        if response.get("error"):
+            self.app.logger.warning(f"error on show_snackbar: {response}, params=({params})")
+            return False
+        else:
+            self.app.logger.debug("show_snackbar")
+            return True
+
+    async def get_user_info(self, user_id: int) -> Optional[VKUser]:
+        params = {
+            "user_ids": str(user_id),
+        }
+        url = self.build_query_url("users.get", params)
         response = await self.query(url, method="GET")
 
         if response.get("error"):
-            # как правило, нет прав доступа
-            self.app.logger.warning(f"{response}, params=({params})")
+            self.app.logger.warning(f"error on get_user_info: {response}, params=({params})")
             return None
-
-        return ConversationMembersResponse(response)
+        else:
+            self.app.logger.debug(f"{user_id}: {response}")
+            return VKUser(response["response"][0])
