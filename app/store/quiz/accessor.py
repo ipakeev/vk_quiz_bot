@@ -37,9 +37,9 @@ class QuizAccessor(BaseAccessor):
         # используется ThemesListDC, так как при list[ThemeDC] marshmallow.dump() не выдает результат
         return ThemesListDC(themes=[i.as_dataclass() for i in theme_models])
 
-    async def create_question(self, theme_id: int, title: str, price: int, answers: list[AnswerDC]) -> QuestionDC:
+    async def create_question(self, theme_id: int, title: str, answers: list[AnswerDC]) -> QuestionDC:
         # валидация того, что данный вопрос с ответами уже есть в базе, происходит на уровне view
-        question_model: QuestionModel = await QuestionModel.create(theme_id=theme_id, title=title, price=price)
+        question_model: QuestionModel = await QuestionModel.create(theme_id=theme_id, title=title)
         answer_models = await self.create_answers(question_model.id, answers)
         return question_model.as_dataclass(answer_models=answer_models)
 
@@ -69,3 +69,23 @@ class QuizAccessor(BaseAccessor):
         await AnswerModel.insert().gino.all([dict(question_id=question_id, **i.as_dict()) for i in answers])
         answer_models = await AnswerModel.query.where(AnswerModel.question_id == question_id).gino.all()
         return answer_models
+
+    async def delete_theme(self, theme_id: int) -> Optional[ThemeDC]:
+        theme: ThemeModel = await ThemeModel \
+            .delete \
+            .where(ThemeModel.id == theme_id) \
+            .returning(*ThemeModel) \
+            .gino.first()
+        if not theme:
+            return None
+        return theme.as_dataclass()
+
+    async def delete_question(self, question_id: int) -> Optional[QuestionDC]:
+        question: QuestionModel = await QuestionModel \
+            .delete \
+            .where(QuestionModel.id == question_id) \
+            .returning(*QuestionModel) \
+            .gino.first()
+        if not question:
+            return None
+        return question.as_dataclass()

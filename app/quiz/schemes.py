@@ -70,4 +70,24 @@ class ListQuestionSchema(Schema):
 class ListQuestionResponseSchema(OkResponseSchema):
     data = fields.Nested(ListQuestionSchema)
 
+
 # ----------------------------------------------------
+
+
+class DeleteThemeRequestSchema(Schema):
+    theme_id = fields.Int(required=True)
+
+
+class DeleteThemeResponseSchema(OkResponseSchema):
+    data = fields.Nested(ThemeSchema)
+
+
+# ----------------------------------------------------
+
+
+class DeleteQuestionRequestSchema(Schema):
+    question_id = fields.Int(required=True)
+
+
+class DeleteQuestionResponseSchema(OkResponseSchema):
+    data = fields.Nested(QuestionSchema)

@@ -69,7 +69,7 @@ class VKLongPoller(BaseAccessor):
                         "act": "a_check",
                         "key": self.poll_service_config.key,
                         "ts": self.poll_service_config.ts,
-                        "wait": 30,
+                        "wait": 20,
                     },
                 )
         ) as resp:

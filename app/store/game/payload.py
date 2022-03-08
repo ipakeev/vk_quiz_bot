@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 LINE_BREAK = "%0A"
+PLUS_SIGN = "%2B"
 
 PRICES = [500, 1000, 1500, 2000, 2500]
 
@@ -23,28 +24,43 @@ class BotActions:
     get_answer = "get_answer"
     show_answer = "show_answer"
     show_scoreboard = "show_scoreboard"
+    confirm_stop_game = "confirm_stop_game"
     stop_game = "stop_game"
     game_rules = "game_rules"
     bot_info = "bot_info"
 
 
 class Stickers:
-    cat_hello = 51117
+    dog_wait_sec = 6571
 
 
 class Photos:
+    main_wallpaper = "photo-210566950_457239020"
     theme_carousel = "-210566950_457239018"
 
 
 class Texts:
-    invite = f"""Благодарю за приглашение в чат.{LINE_BREAK}
+    about = f"""🕹 Привет.{LINE_BREAK}
 Я - бот для игры в викторину.{LINE_BREAK}
 Я создан для того, чтобы весело проводить время с друзьями.{LINE_BREAK}
+Моя страница ВК: https://vk.com/public210566950 {LINE_BREAK}
 Желаю приятной игры."""
-    main_menu = "Главное меню"
-    goodbye = "🗿"
+    rules = f"""📖 Правила игры.{LINE_BREAK}
+👉🏻 Основная задача игры - заработать как можно больше очков, правильно отвечая на вопросы.{LINE_BREAK}
+👉🏻 Первый вопрос выбирает тот, кто первым нажал на кнопку Старт.{LINE_BREAK}
+👉🏻 Каждый вопрос имеет свою стоимость (от 500 до 2000).{LINE_BREAK}
+👉🏻 Очки начисляются первому, кто правильно ответил на вопрос. 
+Он же имеет право на выбор следующего вопроса.{LINE_BREAK}
+👉🏻 За неправильный ответ снимаются очки в количестве стоимости вопроса.{LINE_BREAK}
+👉🏻 Если не знаете ответ - можете не отвечать. {LINE_BREAK}
+👉🏻 Если по прошествии 10 секунд никто не ответил или не было правильного ответа,
+то предлагается выбор другого вопроса.{LINE_BREAK}
+👉🏻 Вы можете завершить игру после любого раунда.{LINE_BREAK}
+✊🏻 Удачи!"""
+    goodbye = "👋🏻"
 
     game_is_already_started = "Игра уже началась."
+    game_is_already_stopped = "Игра уже остановлена."
     you_are_already_joined = "Вы уже присоединились к игре."
     nobody_joined = "Никто не присоединился к игре."
     firstly_join_the_game = "Сначала присоединитесь к игре."
@@ -53,6 +69,7 @@ class Texts:
     old_game_round = "Этот раунд игры устарел."
     too_late = "Опоздали..."
     you_are_already_answered = "Вы уже ответили."
+    flood_detected = "VK ограничивает количество сообщений в час. Продолжим, как только снимется ограничение."
 
 
 @dataclass
@@ -75,6 +92,16 @@ class MainMenuPayload(BasePayload):
 
 
 @dataclass
+class GameRulesPayload(BasePayload):
+    action: str = BotActions.game_rules
+
+
+@dataclass
+class BotInfoPayload(BasePayload):
+    action: str = BotActions.bot_info
+
+
+@dataclass
 class CreateNewGamePayload(BasePayload):
     action: str = BotActions.create_new_game
 
@@ -90,31 +117,32 @@ class StartGamePayload(BasePayload):
 
 
 @dataclass
-class ChooseThemePayload(BasePayload):
+class BaseGamePayload(BasePayload):
     game_id: int
+
+
+@dataclass
+class ChooseThemePayload(BaseGamePayload):
     new: bool = False
     action: str = BotActions.choose_theme
 
 
 @dataclass
-class ChooseQuestionPayload(BasePayload):
-    game_id: int
+class ChooseQuestionPayload(BaseGamePayload):
     theme_id: int
     theme_title: str
     action: str = BotActions.choose_question
 
 
 @dataclass
-class SendQuestionPayload(BasePayload):
-    game_id: int
+class SendQuestionPayload(BaseGamePayload):
     theme_id: int
     price: int
     action: str = BotActions.send_question
 
 
 @dataclass
-class GetAnswerPayload(BasePayload):
-    game_id: int
+class GetAnswerPayload(BaseGamePayload):
     question: str
     answer: str
     uid: str
@@ -122,33 +150,27 @@ class GetAnswerPayload(BasePayload):
 
 
 @dataclass
-class ShowAnswerPayload(BasePayload):
-    game_id: int
+class ShowAnswerPayload(BaseGamePayload):
     question: str
     winner: Optional[int] = None
     action: str = BotActions.show_answer
 
 
 @dataclass
-class ShowScoreboardPayload(BasePayload):
-    game_id: int
+class ShowScoreboardPayload(BaseGamePayload):
+    new: Optional[bool] = True
     action: str = BotActions.show_scoreboard
 
 
 @dataclass
-class StopGamePayload(BasePayload):
-    game_id: int
+class ConfirmStopGamePayload(BaseGamePayload):
+    action: str = BotActions.confirm_stop_game
+
+
+@dataclass
+class StopGamePayload(BaseGamePayload):
+    new: Optional[bool] = True
     action: str = BotActions.stop_game
-
-
-@dataclass
-class GameRulesPayload(BasePayload):
-    action: str = BotActions.game_rules
-
-
-@dataclass
-class BotInfoPayload(BasePayload):
-    action: str = BotActions.bot_info
 
 
 class PayloadFactory:
@@ -159,6 +181,10 @@ class PayloadFactory:
         if action == BotActions.main_menu:
             return MainMenuPayload(source=payload["source"],
                                    new=payload.get("new", False))
+        elif action == BotActions.game_rules:
+            return GameRulesPayload()
+        elif action == BotActions.bot_info:
+            return BotInfoPayload()
         elif action == BotActions.create_new_game:
             return CreateNewGamePayload()
         elif action == BotActions.join_users:
@@ -186,12 +212,12 @@ class PayloadFactory:
                                      question=payload["question"],
                                      winner=payload.get('winner'))
         elif action == BotActions.show_scoreboard:
-            return ShowScoreboardPayload(game_id=payload["game_id"])
+            return ShowScoreboardPayload(game_id=payload["game_id"],
+                                         new=payload.get("new", True))
+        elif action == BotActions.confirm_stop_game:
+            return ConfirmStopGamePayload(game_id=payload["game_id"])
         elif action == BotActions.stop_game:
-            return StopGamePayload(game_id=payload["game_id"])
-        elif action == BotActions.game_rules:
-            return GameRulesPayload()
-        elif action == BotActions.bot_info:
-            return BotInfoPayload()
+            return StopGamePayload(game_id=payload["game_id"],
+                                   new=payload.get("new", True))
         else:
             return EmptyPayload()

@@ -17,6 +17,9 @@ redis:
 vk_bot:
   token: token
   group_id: group_id
+  animate_timer: False
+  sleep_before_show_variants: 3
+  sleep_before_show_answer: 10
 logger:
   name: quiz_game
   file: logger/log.log

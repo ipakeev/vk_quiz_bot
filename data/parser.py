@@ -38,6 +38,7 @@ def parse_quiz_site():
                 if correct_answer in answers:  # бывает, что правильный ответ не совпадает с вариантами ответов
                     question_answers = []
                     for answer in answers:
+                        answer = answer.split("\n")[0].strip()  # удаляем возможный хлам
                         if answer == correct_answer:
                             question_answers.append(dict(title=answer, is_correct=True, description=answer_description))
                         else:

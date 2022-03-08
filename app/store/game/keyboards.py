@@ -1,9 +1,7 @@
 from app.store.game.payload import BotActions
 from app.store.game.payload import (
-    BasePayload, EmptyPayload, MainMenuPayload, CreateNewGamePayload, JoinUsersPayload,
-    StartGamePayload, ChooseThemePayload, ChooseQuestionPayload,
-    SendQuestionPayload, GetAnswerPayload, ShowAnswerPayload, StopGamePayload,
-    ShowScoreboardPayload, GameRulesPayload, BotInfoPayload,
+    MainMenuPayload, CreateNewGamePayload, JoinUsersPayload,
+    StartGamePayload, GameRulesPayload, BotInfoPayload,
 )
 from app.store.vk_api.keyboard import Keyboard, CallbackButton, ButtonColor
 
@@ -12,7 +10,7 @@ def invite() -> Keyboard:
     return Keyboard(inline=True, buttons=[
         [
             CallbackButton("Поехали! 🤝🏻",
-                           payload=MainMenuPayload(source=BotActions.invite, new=True),
+                           payload=MainMenuPayload(source=BotActions.invite),
                            color=ButtonColor.white),
         ],
     ])
@@ -21,22 +19,22 @@ def invite() -> Keyboard:
 def main_menu() -> Keyboard:
     return Keyboard(inline=True, buttons=[
         [
-            CallbackButton("Старт 🚀",
+            CallbackButton("👉🏻 Войти",
                            payload=CreateNewGamePayload(),
                            color=ButtonColor.green),
         ],
         [
-            CallbackButton("Правила игры",
+            CallbackButton("📖 Правила игры",
                            payload=GameRulesPayload(),
                            color=ButtonColor.blue),
         ],
         [
-            CallbackButton("О боте",
+            CallbackButton("🕹 О боте",
                            payload=BotInfoPayload(),
                            color=ButtonColor.blue),
         ],
         [
-            CallbackButton("♻",
+            CallbackButton("♻ Обновить",
                            payload=MainMenuPayload(source=BotActions.main_menu, new=True),
                            color=ButtonColor.white),
         ],
@@ -46,12 +44,12 @@ def main_menu() -> Keyboard:
 def join_users() -> Keyboard:
     return Keyboard(inline=True, buttons=[
         [
-            CallbackButton("Присоединиться",
+            CallbackButton("🤝🏻 Присоединиться",
                            payload=JoinUsersPayload(),
                            color=ButtonColor.blue),
         ],
         [
-            CallbackButton("Старт",
+            CallbackButton("🚀 Старт",
                            payload=StartGamePayload(),
                            color=ButtonColor.green),
             CallbackButton("Отмена",
@@ -61,17 +59,7 @@ def join_users() -> Keyboard:
     ])
 
 
-def question(game_id: int, who_s_turn: int) -> Keyboard:
-    return Keyboard(inline=True, buttons=[
-        [
-            CallbackButton("🏅 Стоп 🏅",
-                           payload=StopGamePayload(),
-                           color=ButtonColor.red),
-        ],
-    ])
-
-
-def results() -> Keyboard:
+def final_results() -> Keyboard:
     return Keyboard(inline=True, buttons=[
         [
             CallbackButton("В главное меню",

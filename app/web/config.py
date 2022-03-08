@@ -20,7 +20,7 @@ class AdminConfig:
     password: str
 
 
-@dataclass(init=False)
+@dataclass
 class DatabaseConfig:
     host: str
     port: int
@@ -28,37 +28,21 @@ class DatabaseConfig:
     password: str
     database: str
 
-    # validate
-    def __init__(self, host: str, port: int, username: str, password: str, database: str):
-        self.host = str(host)
-        self.port = int(port)
-        self.username = str(username)
-        self.password = str(password)
-        self.database = str(database)
 
-
-@dataclass(init=False)
+@dataclass
 class RedisConfig:
     host: str
     port: int
     db: int
 
-    # validate
-    def __init__(self, host: str, port: int, db: int):
-        self.host = str(host)
-        self.port = int(port)
-        self.db = int(db)
 
-
-@dataclass(init=False)
+@dataclass
 class VKBotConfig:
     token: str
     group_id: int
-
-    # validate: group type is int
-    def __init__(self, token: str, group_id: int):
-        self.token = token
-        self.group_id = int(group_id)
+    animate_timer: bool  # set False to avoid 'Flood control: too much messages sent to user'
+    sleep_before_show_variants: int
+    sleep_before_show_answer: int
 
 
 @dataclass

@@ -1,7 +1,8 @@
 from typing import Optional
+
 from app.store.game.payload import BasePayload, EmptyPayload
 
-MAX_CAROUSEL_ELEMENTS = 10
+MAX_CAROUSEL_ELEMENTS = 6  # вместо 10, иначе может вызвать ошибку по длине сообщения
 
 
 class ButtonColor:

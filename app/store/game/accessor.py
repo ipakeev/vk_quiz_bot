@@ -1,5 +1,7 @@
 import json
 import random
+from collections import defaultdict
+from datetime import datetime
 from typing import Optional
 
 from redis import Redis
@@ -10,11 +12,13 @@ from app.base.accessor import BaseAccessor
 from app.game.models import (
     UserDC, UserModel,
     ChatModel,
-    GameModel, GameAskedQuestionModel, CorrectAnswerModel, GameUserScoreModel
+    GameDC, GameModel,
+    GameAskedQuestionModel, GameUserScoreModel, GameStatsDC, TopWinnerDC, TopScorerDC,
 )
 from app.quiz.models import QuestionDC, QuestionModel, AnswerModel, AnswerDC
 from app.store.game.payload import BotActions
 from app.store.vk_api.responses import VKUser
+from app.utils import now
 from app.web.app import Application
 
 
@@ -122,12 +126,30 @@ class StateAccessor(BaseAccessor):
     def get_previous_text(self, chat_id: int) -> str:
         return self.redis.get(f"text_{chat_id}").decode()
 
+    def set_flood_detected(self, chat_id: int) -> None:
+        self.redis.set(f"flood_{chat_id}", now().isoformat())
+
+    def set_flood_not_detected(self, chat_id: int) -> None:
+        self.redis.delete(f"flood_{chat_id}")
+
+    def is_flood_detected(self, chat_id: int) -> bool:
+        """
+        По прошествии часа можно снимать ограничения.
+        """
+        detected_at = self.redis.get(f"flood_{chat_id}")
+        if not detected_at:
+            return False
+        detected_at = datetime.fromisoformat(detected_at.decode())
+        if (now() - detected_at).total_seconds() / 60 / 60 > 1.0:
+            return False
+        return True
+
 
 class GameAccessor(BaseAccessor):
 
     async def restore_status(self, chat_id: int) -> None:
         game_models: list[GameModel] = await GameModel.update \
-            .values(is_stopped=True) \
+            .values(is_stopped=True, finished_at=now()) \
             .where(GameModel.chat_id == chat_id) \
             .returning(*GameModel).gino.all()
         if not game_models:
@@ -157,29 +179,49 @@ class GameAccessor(BaseAccessor):
         )
         return game
 
-    async def update_game_user_score(self, game_id: int, user_id: int, score: int):
-        user_score: GameUserScoreModel = await GameUserScoreModel.query.where(
-            and_(GameUserScoreModel.game_id == game_id,
-                 GameUserScoreModel.user_id == user_id)
-        ).gino.first()
-        await user_score.update(score=user_score.score + score).apply()
+    async def update_game_scores(self,
+                                 game_id: int,
+                                 winner_user_id: Optional[int],
+                                 wrong_answered_user_ids: list[int],
+                                 price: int) -> list[GameUserScoreModel]:
+        user_score_models = []
+
+        if winner_user_id is not None:
+            user_score: GameUserScoreModel = await GameUserScoreModel.update \
+                .values(score=GameUserScoreModel.score + price,
+                        n_correct_answers=GameUserScoreModel.n_correct_answers + 1) \
+                .where(and_(GameUserScoreModel.game_id == game_id,
+                            GameUserScoreModel.user_id == winner_user_id)) \
+                .returning(*GameUserScoreModel) \
+                .gino.first()
+            user_score_models.append(user_score)
+
+        if wrong_answered_user_ids:
+            user_scores: list[GameUserScoreModel] = await GameUserScoreModel.update \
+                .values(score=GameUserScoreModel.score - price,
+                        n_wrong_answers=GameUserScoreModel.n_wrong_answers + 1) \
+                .where(and_(GameUserScoreModel.game_id == game_id,
+                            GameUserScoreModel.user_id.in_(wrong_answered_user_ids))) \
+                .returning(*GameUserScoreModel) \
+                .gino.all()
+            user_score_models.extend(user_scores)
+
+        return user_score_models
 
     async def get_new_question(self, game_id: int, theme_id: int) -> QuestionDC:
-        exclude_questions = GameAskedQuestionModel.select("question_id") \
+        exclude_questions = GameAskedQuestionModel \
+            .select("question_id") \
             .where(GameAskedQuestionModel.game_id == game_id)
 
         questions: list[QuestionModel] = await QuestionModel \
             .outerjoin(AnswerModel, QuestionModel.id == AnswerModel.question_id) \
             .select() \
-            .where(and_(
-            QuestionModel.theme_id == theme_id,
-            not_(QuestionModel.id.in_(exclude_questions)),
-        )) \
-            .gino.load(
-            QuestionModel.distinct(QuestionModel.id).load(
-                answers=AnswerModel.load()
-            )
-        ).all()
+            .where(and_(QuestionModel.theme_id == theme_id,
+                        not_(QuestionModel.id.in_(exclude_questions)))) \
+            .gino \
+            .load(QuestionModel.distinct(QuestionModel.id)
+                  .load(answers=AnswerModel.load())) \
+            .all()
 
         question: QuestionModel = random.choice(questions)
         await GameAskedQuestionModel.create(game_id=game_id, question_id=question.id)
@@ -188,32 +230,124 @@ class GameAccessor(BaseAccessor):
     async def set_game_question_result(self,
                                        game_id: int,
                                        question_id: int,
-                                       is_answered: bool,
-                                       user_id: Optional[int] = None) -> None:
-        await GameAskedQuestionModel.update.values(is_answered=is_answered, is_done=True).where(
-            and_(GameAskedQuestionModel.game_id == game_id,
-                 GameAskedQuestionModel.question_id == question_id)
-        ).gino.status()
-
-        if user_id is not None:
-            await CorrectAnswerModel.create(game_id=game_id, question_id=question_id, user_id=user_id)
+                                       winner_id: Optional[int] = None) -> None:
+        is_answered = winner_id is not None
+        await GameAskedQuestionModel.update \
+            .values(is_answered=is_answered, is_done=True) \
+            .where(and_(GameAskedQuestionModel.game_id == game_id,
+                        GameAskedQuestionModel.question_id == question_id)) \
+            .gino.status()
 
     async def get_game_scores(self, game_id: int) -> list[UserDC]:
-        query = UserModel.join(
-            GameUserScoreModel, and_(UserModel.id == GameUserScoreModel.user_id,
-                                     GameUserScoreModel.game_id == game_id)
-        ).join(
-            CorrectAnswerModel, and_(UserModel.id == CorrectAnswerModel.user_id,
-                                     GameUserScoreModel.game_id == game_id)
-        ).select()
-        user_models: list[UserModel] = await query.gino.load(
-            UserModel.distinct(UserModel.id).load(
-                correct_answers=CorrectAnswerModel.load(),
-                score=GameUserScoreModel.score,
-            )
-        ).all()
-        return [UserDC(id=i.id,
-                       first_name=i.first_name,
-                       last_name=i.last_name,
-                       score=i.score,
-                       n_correct_answers=len(i.correct_answers)) for i in user_models]
+        user_models: list[UserModel] = await UserModel \
+            .join(GameUserScoreModel, and_(GameUserScoreModel.user_id == UserModel.id,
+                                           GameUserScoreModel.game_id == game_id)) \
+            .select() \
+            .gino \
+            .load(UserModel.distinct(UserModel.id)
+                  .load(score=GameUserScoreModel.score,
+                        n_correct_answers=GameUserScoreModel.n_correct_answers,
+                        n_wrong_answers=GameUserScoreModel.n_wrong_answers)) \
+            .all()
+        return [i.as_dataclass() for i in user_models]
+
+    async def fetch_games(self, page: Optional[int] = None, per_page=10) -> list[GameDC]:
+        """
+        Этот запрос не работает должным образом, никак не могу понять, почему...
+        Данные дублируются, либо суммируются.
+        Видимо, потому что имеется отношение many-to-many, которое не поддерживается gino?
+
+        game_models: list[GameModel] = await GameModel \
+            .outerjoin(GameUserScoreModel, GameUserScoreModel.game_id == GameModel.id) \
+            .outerjoin(UserModel, UserModel.id == GameUserScoreModel.user_id) \
+            .select() \
+            .gino \
+            .load(GameModel.distinct(GameModel.id)
+                  .load(users=UserModel.distinct(GameUserScoreModel.user_id)
+                        .load(score=GameUserScoreModel.score,
+                              n_correct_answers=GameUserScoreModel.n_correct_answers,
+                              n_wrong_answers=GameUserScoreModel.n_wrong_answers))) \
+            .all()
+
+        А если подгружать и обрабатывать данные только в GameModel,
+        то всё работает так, как и ожидается.
+        """
+        LimitedGameModel = GameModel.alias("limited_games")
+        limited_games = GameModel.query
+        if page is not None:
+            limited_games = limited_games.limit(per_page).offset((page - 1) * per_page)
+        limited_games = limited_games.alias("limited_games")
+
+        game_models: list[GameModel] = await GameModel \
+            .join(limited_games, GameModel.id == LimitedGameModel.id) \
+            .outerjoin(GameUserScoreModel, GameUserScoreModel.game_id == GameModel.id) \
+            .outerjoin(UserModel, UserModel.id == GameUserScoreModel.user_id) \
+            .select() \
+            .gino \
+            .load(GameModel.distinct(GameModel.id)
+                  .load(scores=GameUserScoreModel,
+                        users=UserModel)) \
+            .all()
+        return [i.as_dataclass() for i in game_models]
+
+    async def fetch_game_stats(self,
+                               n_winners: int = 3,
+                               n_scorers: int = 3) -> GameStatsDC:
+        game_models: list[GameModel] = await GameModel \
+            .outerjoin(GameUserScoreModel, GameUserScoreModel.game_id == GameModel.id) \
+            .outerjoin(UserModel, UserModel.id == GameUserScoreModel.user_id) \
+            .select() \
+            .gino \
+            .load(GameModel.distinct(GameModel.id)
+                  .load(scores=GameUserScoreModel,
+                        users=UserModel)) \
+            .all()
+
+        game_dcs = [i.as_dataclass() for i in game_models]
+        finished_game_dcs = [i for i in game_dcs if i.finished_at is not None]
+
+        games_total = len(game_dcs)
+        days = (now() - game_dcs[0].started_at).days
+        games_average_per_day = games_total / days if days > 0 else 0.0
+        duration_total = sum([int((i.finished_at - i.started_at).total_seconds())
+                              for i in finished_game_dcs])
+        duration_average = duration_total / len(finished_game_dcs) if finished_game_dcs else 0.0
+
+        users: dict[int, UserDC] = {u.id: u for g in game_dcs for u in g.users}
+
+        wins = defaultdict(int)
+        for game in finished_game_dcs:
+            # users already sorted by score
+            wins[game.users[0].id] += 1
+        wins = [(k, v) for k, v in wins.items()]
+        wins.sort(key=lambda i: i[1], reverse=True)
+        top_winners = []
+        for user_id, win_count in wins[:n_winners]:
+            user = users[user_id]
+            top_winners.append(TopWinnerDC(id=user.id,
+                                           first_name=user.first_name,
+                                           last_name=user.last_name,
+                                           joined_at=user.joined_at,
+                                           win_count=win_count))
+
+        scores = defaultdict(list)
+        for game in finished_game_dcs:
+            for user in game.users:
+                scores[user.id].append(user.score)
+        scores = [(k, max(v)) for k, v in scores.items()]
+        scores.sort(key=lambda i: i[1], reverse=True)
+        top_scorers = []
+        for user_id, max_score in scores[:n_scorers]:
+            user = users[user_id]
+            top_scorers.append(TopScorerDC(id=user.id,
+                                           first_name=user.first_name,
+                                           last_name=user.last_name,
+                                           joined_at=user.joined_at,
+                                           score=max_score))
+
+        return GameStatsDC(games_total=games_total,
+                           games_average_per_day=games_average_per_day,
+                           duration_total=duration_total,
+                           duration_average=duration_average,
+                           top_winners=top_winners,
+                           top_scorers=top_scorers)
