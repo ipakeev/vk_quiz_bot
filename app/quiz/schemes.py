@@ -21,12 +21,9 @@ class AddThemeResponseSchema(OkResponseSchema):
 
 # ----------------------------------------------------
 
-class ThemeListSchema(Schema):
-    themes = fields.Nested(ThemeSchema, many=True)
-
 
 class ThemeListResponseSchema(OkResponseSchema):
-    data = fields.Nested(ThemeListSchema)
+    data = fields.Nested(ThemeSchema, many=True)
 
 
 # ----------------------------------------------------
@@ -35,7 +32,7 @@ class ThemeListResponseSchema(OkResponseSchema):
 class AnswerSchema(Schema):
     title = fields.Str(required=True)
     is_correct = fields.Bool(required=True)
-    description = fields.Str(required=False)
+    description = fields.Str(required=False, allow_none=True)
 
 
 # ----------------------------------------------------
@@ -63,12 +60,8 @@ class QueryThemeIdSchema(Schema):
     theme_id = fields.Int(required=False)
 
 
-class ListQuestionSchema(Schema):
-    questions = fields.Nested(QuestionSchema, many=True)
-
-
 class ListQuestionResponseSchema(OkResponseSchema):
-    data = fields.Nested(ListQuestionSchema)
+    data = fields.Nested(QuestionSchema, many=True)
 
 
 # ----------------------------------------------------

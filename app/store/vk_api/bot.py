@@ -7,7 +7,6 @@ from functools import wraps
 from typing import Optional
 
 from app.base.accessor import BaseAccessor
-from app.game.models import UserDC
 from app.store.game import keyboards
 from app.store.game.payload import (
     BasePayload, MainMenuPayload, CreateNewGamePayload, JoinUsersPayload,
@@ -272,14 +271,12 @@ async def start_game(msg: MessageCallback, _: StartGamePayload):
         return await msg.show_snackbar(Texts.firstly_join_the_game)
     msg.states.set_game_status(msg.chat_id, BotActions.choose_theme)
 
-    user_models = await msg.games.create_users(
-        [UserDC(**i.as_dict()) for i in users]
-    )
-    game_model = await msg.games.create_game(msg.chat_id, user_models)
-    msg.states.set_game_id(msg.chat_id, game_model.id)
+    user_dcs = await msg.games.create_users(users)
+    game_dc = await msg.games.create_game(msg.chat_id, user_dcs)
+    msg.states.set_game_id(msg.chat_id, game_dc.id)
     msg.states.set_who_s_turn(msg.chat_id, msg.user_id)
 
-    await choose_theme(msg, ChooseThemePayload(game_id=game_model.id, new=True))
+    await choose_theme(msg, ChooseThemePayload(game_id=game_dc.id, new=True))
 
 
 @filter_game_id
@@ -289,7 +286,7 @@ async def choose_theme(msg: MessageCallback, payload: ChooseThemePayload):
     # но выбирать саму тему может только тот, чья сейчас очередь
     msg.states.set_game_status(msg.chat_id, BotActions.choose_question)
 
-    themes = (await msg.quiz.list_themes()).themes
+    themes = await msg.quiz.list_themes()
     theme_chosen_prices = msg.states.get_theme_chosen_prices(msg.chat_id)
     exclude_theme_ids = [k for k, v in theme_chosen_prices.items() if 0 not in v]
     themes = [i for i in themes if i.id not in exclude_theme_ids]
@@ -363,7 +360,9 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
     theme_chosen_prices[payload.theme_id] = chosen_prices
     msg.states.set_theme_chosen_prices(msg.chat_id, theme_chosen_prices)
 
-    question = await msg.games.get_new_question(payload.game_id, payload.theme_id)
+    question_models = await msg.games.get_remaining_questions(payload.game_id, payload.theme_id)
+    question = random.choice(question_models).as_dataclass()
+    await msg.games.set_question_asked(payload.game_id, question)
     random.shuffle(question.answers)
     msg.states.set_current_question_id(msg.chat_id, question.id)
     msg.states.set_current_answer(msg.chat_id, [i for i in question.answers if i.is_correct][0])
@@ -452,7 +451,7 @@ async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
     question_id = msg.states.get_current_question_id(msg.chat_id)
     await msg.games.set_game_question_result(payload.game_id,
                                              question_id,
-                                             winner_id=payload.winner)
+                                             is_answered=payload.winner is not None)
 
     answer = msg.states.get_current_answer(msg.chat_id)
     await msg.send(f"Правильный ответ:{LINE_BREAK}💡 {answer.title}{LINE_BREAK}📖 {answer.description}")

@@ -35,7 +35,7 @@ class ThemeListView(View):
         self.request.app.logger.debug("get ThemeListview")
         list_themes = await self.store.quiz.list_themes()
         return json_response(
-            data=schemes.ThemeListSchema().dump(list_themes),
+            data=[schemes.ThemeSchema().dump(i) for i in list_themes],
         )
 
     async def post(self):
@@ -73,7 +73,7 @@ class QuestionAddView(View):
 
         question = await self.store.quiz.create_question(theme_id, title, answers)
         return json_response(
-            data=schemes.QuestionSchema().dump(question),
+            data=question.as_dict(),
         )
 
 
@@ -87,7 +87,7 @@ class QuestionListView(View):
         theme_id = schemes.QueryThemeIdSchema().load(self.request.query).get("theme_id")
         questions = await self.store.quiz.list_questions(theme_id)
         return json_response(
-            data=schemes.ListQuestionSchema().dump(questions),
+            data=[schemes.QuestionSchema().dump(i) for i in questions],
         )
 
     async def post(self):

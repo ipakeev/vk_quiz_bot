@@ -13,7 +13,7 @@ from app.game.models import (
     UserDC, UserModel,
     ChatModel,
     GameDC, GameModel,
-    GameAskedQuestionModel, GameUserScoreModel, GameStatsDC, TopWinnerDC, TopScorerDC,
+    GameAskedQuestionModel, GameUserScoreModel, GameStatsDC, TopWinnerDC, TopScorerDC, ChatDC,
 )
 from app.quiz.models import QuestionDC, QuestionModel, AnswerModel, AnswerDC
 from app.store.game.payload import BotActions
@@ -100,6 +100,7 @@ class StateAccessor(BaseAccessor):
         return int(self.redis.get(f"current_price_{chat_id}").decode())
 
     def set_current_answer(self, chat_id: int, answer: AnswerDC) -> None:
+        assert answer.is_correct
         self.redis.set(f"current_answer_{chat_id}", json.dumps(answer.as_dict(), ensure_ascii=False))
 
     def get_current_answer(self, chat_id: int) -> AnswerDC:
@@ -158,57 +159,74 @@ class GameAccessor(BaseAccessor):
             .where(GameAskedQuestionModel.game_id.in_([i.id for i in game_models])) \
             .gino.status()
 
-    async def create_users(self, users: list[UserDC]) -> list[UserModel]:
-        stmt = insert(UserModel).values(
-            [dict(id=i.id, first_name=i.first_name, last_name=i.last_name) for i in users]
-        )
-        query = stmt.on_conflict_do_update(
-            index_elements=[UserModel.id],
-            set_=dict(first_name=stmt.excluded.first_name,
-                      last_name=stmt.excluded.last_name)
-        ).returning(*UserModel)
-        return await query.gino.model(UserModel).all()
-
     async def joined_the_chat(self, chat_id: int) -> None:
         await insert(ChatModel).values(id=chat_id).on_conflict_do_nothing().gino.status()
 
-    async def create_game(self, chat_id, users: list[UserModel]) -> GameModel:
+    async def get_chats(self) -> list[ChatDC]:
+        chats: list[ChatModel] = await ChatModel.query.gino.all()
+        return [i.as_dataclass() for i in chats]
+
+    async def create_users(self, users: list[VKUser]) -> list[UserDC]:
+        if not users:
+            return []
+        stmt = insert(UserModel).values(
+            [dict(id=i.id, first_name=i.first_name, last_name=i.last_name) for i in users]
+        )
+        user_models: list[UserModel] = await stmt \
+            .on_conflict_do_update(index_elements=[UserModel.id],
+                                   set_=dict(first_name=stmt.excluded.first_name,
+                                             last_name=stmt.excluded.last_name)) \
+            .returning(*UserModel) \
+            .gino.model(UserModel).all()
+        return [i.as_dataclass() for i in user_models]
+
+    async def create_game(self, chat_id, users: list[UserDC]) -> GameDC:
         game: GameModel = await GameModel.create(chat_id=chat_id)
         await GameUserScoreModel.insert().gino.all(
             *(dict(game_id=game.id, user_id=u.id) for u in users)
         )
-        return game
+        return game.as_dataclass()
+
+    async def get_game_by_id(self, game_id: int) -> Optional[GameDC]:
+        game: GameModel = await GameModel.query.where(GameModel.id == game_id).gino.first()
+        if game is None:
+            return None
+        return game.as_dataclass()
+
+    async def get_game_scores(self, game_id: int) -> list[UserDC]:
+        user_models: list[UserModel] = await UserModel \
+            .join(GameUserScoreModel, and_(GameUserScoreModel.user_id == UserModel.id,
+                                           GameUserScoreModel.game_id == game_id)) \
+            .select() \
+            .gino \
+            .load(UserModel.distinct(UserModel.id)
+                  .load(score=GameUserScoreModel.score,
+                        n_correct_answers=GameUserScoreModel.n_correct_answers,
+                        n_wrong_answers=GameUserScoreModel.n_wrong_answers)) \
+            .all()
+        return [i.as_dataclass() for i in user_models]
 
     async def update_game_scores(self,
                                  game_id: int,
                                  winner_user_id: Optional[int],
                                  wrong_answered_user_ids: list[int],
-                                 price: int) -> list[GameUserScoreModel]:
-        user_score_models = []
-
+                                 price: int) -> None:
         if winner_user_id is not None:
-            user_score: GameUserScoreModel = await GameUserScoreModel.update \
+            await GameUserScoreModel.update \
                 .values(score=GameUserScoreModel.score + price,
                         n_correct_answers=GameUserScoreModel.n_correct_answers + 1) \
                 .where(and_(GameUserScoreModel.game_id == game_id,
                             GameUserScoreModel.user_id == winner_user_id)) \
-                .returning(*GameUserScoreModel) \
-                .gino.first()
-            user_score_models.append(user_score)
-
+                .gino.status()
         if wrong_answered_user_ids:
-            user_scores: list[GameUserScoreModel] = await GameUserScoreModel.update \
+            await GameUserScoreModel.update \
                 .values(score=GameUserScoreModel.score - price,
                         n_wrong_answers=GameUserScoreModel.n_wrong_answers + 1) \
                 .where(and_(GameUserScoreModel.game_id == game_id,
                             GameUserScoreModel.user_id.in_(wrong_answered_user_ids))) \
-                .returning(*GameUserScoreModel) \
-                .gino.all()
-            user_score_models.extend(user_scores)
+                .gino.status()
 
-        return user_score_models
-
-    async def get_new_question(self, game_id: int, theme_id: int) -> QuestionDC:
+    async def get_remaining_questions(self, game_id: int, theme_id: int) -> list[QuestionModel]:
         exclude_questions = GameAskedQuestionModel \
             .select("question_id") \
             .where(GameAskedQuestionModel.game_id == game_id)
@@ -223,33 +241,22 @@ class GameAccessor(BaseAccessor):
                   .load(answers=AnswerModel.load())) \
             .all()
 
-        question: QuestionModel = random.choice(questions)
+        return questions
+
+    async def set_question_asked(self, game_id: int, question: QuestionModel) -> None:
         await GameAskedQuestionModel.create(game_id=game_id, question_id=question.id)
-        return question.as_dataclass()
 
     async def set_game_question_result(self,
                                        game_id: int,
                                        question_id: int,
-                                       winner_id: Optional[int] = None) -> None:
-        is_answered = winner_id is not None
-        await GameAskedQuestionModel.update \
+                                       is_answered: bool) -> GameAskedQuestionModel:
+        asked_question = await GameAskedQuestionModel.update \
             .values(is_answered=is_answered, is_done=True) \
             .where(and_(GameAskedQuestionModel.game_id == game_id,
                         GameAskedQuestionModel.question_id == question_id)) \
-            .gino.status()
-
-    async def get_game_scores(self, game_id: int) -> list[UserDC]:
-        user_models: list[UserModel] = await UserModel \
-            .join(GameUserScoreModel, and_(GameUserScoreModel.user_id == UserModel.id,
-                                           GameUserScoreModel.game_id == game_id)) \
-            .select() \
-            .gino \
-            .load(UserModel.distinct(UserModel.id)
-                  .load(score=GameUserScoreModel.score,
-                        n_correct_answers=GameUserScoreModel.n_correct_answers,
-                        n_wrong_answers=GameUserScoreModel.n_wrong_answers)) \
-            .all()
-        return [i.as_dataclass() for i in user_models]
+            .returning(*GameAskedQuestionModel) \
+            .gino.first()
+        return asked_question
 
     async def fetch_games(self, page: Optional[int] = None, per_page=10) -> list[GameDC]:
         """
@@ -307,7 +314,7 @@ class GameAccessor(BaseAccessor):
         finished_game_dcs = [i for i in game_dcs if i.finished_at is not None]
 
         games_total = len(game_dcs)
-        days = (now() - game_dcs[0].started_at).days
+        days = (now() - game_dcs[0].started_at).days if game_dcs else 0
         games_average_per_day = games_total / days if days > 0 else 0.0
         duration_total = sum([int((i.finished_at - i.started_at).total_seconds())
                               for i in finished_game_dcs])

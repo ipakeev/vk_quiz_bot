@@ -45,34 +45,28 @@ class VKLongPoller(BaseAccessor):
         await self.session.close()
 
     async def init_long_poll_service(self):
-        async with self.session.get(
-                build_query(
-                    host=self.API_PATH,
-                    method="groups.getLongPollServer",
-                    params={
-                        "group_id": self.app.config.vk_bot.group_id,
-                        "access_token": self.app.config.vk_bot.token,
-                    },
-                )
-        ) as resp:
+        url = build_query(host=self.API_PATH,
+                          method="groups.getLongPollServer",
+                          params={
+                              "group_id": self.app.config.vk_bot.group_id,
+                              "access_token": self.app.config.vk_bot.token,
+                          })
+        async with self.session.get(url) as resp:
             data = (await resp.json())["response"]
             self.poll_service_config = PollServiceConfig(key=data["key"],
                                                          server=data["server"],
                                                          ts=data["ts"])
 
     async def query_long_poll(self):
-        async with self.session.get(
-                build_query(
-                    host=self.poll_service_config.server,
-                    method="",
-                    params={
-                        "act": "a_check",
-                        "key": self.poll_service_config.key,
-                        "ts": self.poll_service_config.ts,
-                        "wait": 20,
-                    },
-                )
-        ) as resp:
+        url = build_query(host=self.poll_service_config.server,
+                          method="",
+                          params={
+                              "act": "a_check",
+                              "key": self.poll_service_config.key,
+                              "ts": self.poll_service_config.ts,
+                              "wait": 20,
+                          })
+        async with self.session.get(url) as resp:
             data = await resp.json()
             if "ts" in data:
                 self.poll_service_config.ts = data["ts"]
@@ -91,20 +85,12 @@ class LongPollingLoop:
         self.is_running = False
 
     async def start_polling(self):
-        if self.is_running:
-            self.app.logger.warning("poller already started")
-            return
         self.app.logger.info("start polling")
-
         self.is_running = True
         self.long_poll_task = asyncio.create_task(self.long_polling())
 
     async def stop_polling(self):
-        if not self.is_running:
-            self.app.logger.warning("poller already stopped")
-            return
         self.app.logger.info("stop polling")
-
         self.is_running = False
         await self.long_poll_task
 

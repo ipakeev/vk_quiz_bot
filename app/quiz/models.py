@@ -17,10 +17,8 @@ class ThemeDC:
     title: str
     created_at: datetime
 
-
-@dataclass
-class ThemesListDC:
-    themes: list[ThemeDC]
+    def as_dict(self) -> dict:
+        return asdict(self)
 
 
 class ThemeModel(db.Model):
@@ -41,10 +39,8 @@ class QuestionDC:
     title: str
     answers: list["AnswerDC"]
 
-
-@dataclass
-class QuestionsListDC:
-    questions: list[QuestionDC]
+    def as_dict(self) -> dict:
+        return asdict(self)
 
 
 class QuestionModel(db.Model):
