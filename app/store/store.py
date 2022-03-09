@@ -22,5 +22,5 @@ class Store:
         self.vk_long_poller = VKLongPoller(app)
         self.vk_updates_queue = Queue()
         self.vk_messenger = VKMessenger(app)
-        self.vk_response_handler = VKUpdatesPoller(app)
+        self.vk_updates_poller = VKUpdatesPoller(app)
         self.vk_bot = VKBot(app)
