@@ -5,14 +5,21 @@ admin:
   email: admin@admin.com
   password: admin
 database:
+  username: postgres
+  password: postgres
   host: 127.0.0.1
   port: 5432
-  user: postgres
-  password: postgres
   database: postgres
+redis:
+  host: 127.0.0.1
+  port: 6379
+  db: 0
 vk_bot:
   token: token
   group_id: group_id
+  animate_timer: False
+  sleep_before_show_variants: 3
+  sleep_before_show_answer: 10
 logger:
   name: quiz_game
   file: logger/log.log

@@ -57,7 +57,6 @@ class QuestionAddView(View):
 
         theme_id = data["theme_id"]
         title = data["title"]
-        price = data["price"]
         answers = [models.AnswerDC(**i) for i in data["answers"]]
 
         if sum([i.is_correct for i in answers]) != 1:
@@ -66,16 +65,13 @@ class QuestionAddView(View):
         if len(set([i.title for i in answers])) != len(answers):
             raise marshmallow.ValidationError(message="Answers must be unique.")
 
-        if price <= 0:
-            raise marshmallow.ValidationError(message="Price must be positive.")
-
         if not await self.store.quiz.get_theme_by_id(theme_id):
             raise web_exceptions.HTTPNotFound(text=f"Theme with id={theme_id} not found.")
 
         if await self.store.quiz.get_question_by_title(title):
             raise web_exceptions.HTTPConflict(text=f"Questions with title='{title}' is exists.")
 
-        question = await self.store.quiz.create_question(theme_id, title, price, answers)
+        question = await self.store.quiz.create_question(theme_id, title, answers)
         return json_response(
             data=schemes.QuestionSchema().dump(question),
         )
@@ -96,3 +92,45 @@ class QuestionListView(View):
 
     async def post(self):
         raise web_exceptions.HTTPNotImplemented()
+
+
+@require_login
+class DeleteThemeView(View):
+
+    async def get(self):
+        raise web_exceptions.HTTPNotImplemented()
+
+    async def post(self):
+        raise web_exceptions.HTTPNotImplemented()
+
+    @docs(description="Delete theme by id.")
+    @request_schema(schemes.DeleteThemeRequestSchema)
+    @response_schema(schemes.DeleteThemeResponseSchema)
+    async def delete(self):
+        data = self.data
+        self.request.app.logger.debug(f"delete theme {data}")
+        theme = await self.store.quiz.delete_theme(data["theme_id"])
+        return json_response(
+            data=schemes.ThemeSchema().dump(theme),
+        )
+
+
+@require_login
+class DeleteQuestionView(View):
+
+    async def get(self):
+        raise web_exceptions.HTTPNotImplemented()
+
+    async def post(self):
+        raise web_exceptions.HTTPNotImplemented()
+
+    @docs(description="Delete question by id.")
+    @request_schema(schemes.DeleteQuestionRequestSchema)
+    @response_schema(schemes.DeleteQuestionResponseSchema)
+    async def delete(self):
+        data = self.data
+        self.request.app.logger.debug(f"delete question {data}")
+        question = await self.store.quiz.delete_question(data["question_id"])
+        return json_response(
+            data=schemes.QuestionSchema().dump(question),
+        )

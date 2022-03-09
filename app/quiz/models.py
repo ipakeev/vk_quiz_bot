@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
 
@@ -39,7 +39,6 @@ class QuestionDC:
     id: int
     theme_id: int
     title: str
-    price: int
     answers: list["AnswerDC"]
 
 
@@ -54,7 +53,6 @@ class QuestionModel(db.Model):
     id = db.Column(db.Integer(), primary_key=True, autoincrement=True)
     theme_id = db.Column(db.ForeignKey("themes.id", ondelete="CASCADE"), nullable=False)
     title = db.Column(db.String(), nullable=False)
-    price = db.Column(db.Integer(), nullable=False)
 
     def __init__(self, *args, **kwargs):
         super(QuestionModel, self).__init__(*args, **kwargs)
@@ -71,13 +69,17 @@ class QuestionModel(db.Model):
     def as_dataclass(self, answer_models: Optional[list["AnswerModel"]] = None) -> QuestionDC:
         answer_models = answer_models or self.answers
         answer_dcs = [i.as_dataclass() for i in answer_models]
-        return QuestionDC(id=self.id, theme_id=self.theme_id, title=self.title, price=self.price, answers=answer_dcs)
+        return QuestionDC(id=self.id, theme_id=self.theme_id, title=self.title, answers=answer_dcs)
 
 
 @dataclass
 class AnswerDC:
     title: str
     is_correct: bool
+    description: Optional[str] = None
+
+    def as_dict(self) -> dict:
+        return asdict(self)
 
 
 class AnswerModel(db.Model):
@@ -87,6 +89,7 @@ class AnswerModel(db.Model):
     question_id = db.Column(db.ForeignKey("questions.id", ondelete="CASCADE"), nullable=False)
     title = db.Column(db.String(), nullable=False)
     is_correct = db.Column(db.Boolean(), nullable=False)
+    description = db.Column(db.String(), nullable=True)
 
     def as_dataclass(self) -> AnswerDC:
-        return AnswerDC(title=self.title, is_correct=self.is_correct)
+        return AnswerDC(title=self.title, is_correct=self.is_correct, description=self.description)

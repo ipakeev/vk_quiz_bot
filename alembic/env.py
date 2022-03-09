@@ -20,7 +20,7 @@ with open(config_file) as f:
 def set_sqlalchemy_ulr(dbc: DatabaseConfig):
     config.set_main_option(
         'sqlalchemy.url',
-        f'postgresql://{dbc.user}:{dbc.password}@{dbc.host}:{dbc.port}/{dbc.database}',
+        f'postgresql://{dbc.username}:{dbc.password}@{dbc.host}:{dbc.port}/{dbc.database}',
     )
 
 

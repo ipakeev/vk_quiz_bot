@@ -2,6 +2,7 @@ import typing
 from typing import Optional
 
 from gino import Gino
+from redis import Redis
 from sqlalchemy.engine.url import URL
 
 if typing.TYPE_CHECKING:
@@ -17,49 +18,44 @@ def register_models() -> None:
     import app.admin.models as m1
     import app.game.models as m2
     import app.quiz.models as m3
-    import app.vk.models as m4
     _ = m1
     _ = m2
     _ = m3
-    _ = m4
 
 
 class Database:
     db: Optional[Gino]
+    redis: Optional[Redis]
 
     def __init__(self, app: "Application"):
         self.app = app
-        self.is_connected = False
         register_models()
 
     async def connect(self, *_, **__):
-        if self.is_connected:
-            self.app.logger.warning("connection already exist!")
-            return
-        self.app.logger.debug("connecting to the database")
+        self.app.logger.info("connecting to the database")
 
         self.db = db
         await self.db.set_bind(
             URL(
                 drivername="asyncpg",
-                host=self.app.config.database.host,
-                database=self.app.config.database.database,
-                username=self.app.config.database.user,
+                username=self.app.config.database.username,
                 password=self.app.config.database.password,
+                host=self.app.config.database.host,
                 port=self.app.config.database.port,
+                database=self.app.config.database.database,
             ),
             min_size=1,
             max_size=1,
             echo=False,
         )
         await self.db.gino.create_all()
-        self.is_connected = True
+
+        self.redis = Redis(host=self.app.config.redis.host,
+                           port=self.app.config.redis.port,
+                           db=self.app.config.redis.db)
 
     async def disconnect(self, *_, **__):
-        if not self.is_connected:
-            self.app.logger.warning("connection is not exist!")
-            return
-        self.app.logger.debug("disconnecting from the database")
+        self.app.logger.info("disconnecting from the database")
 
         await self.db.pop_bind().close()
-        self.is_connected = False
+        self.redis.close()
