@@ -19,6 +19,7 @@ vk_bot:
   animate_timer: False
   sleep_before_show_variants: 3
   sleep_before_show_answer: 10
+  long_poller_wait: 20
   updates_poller_queue_poller_sleep: 0.1
   updates_poller_gc_sleep: 0.1
   bot_gc_sleep: 0.1

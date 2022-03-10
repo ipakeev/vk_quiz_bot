@@ -64,7 +64,7 @@ class VKLongPoller(BaseAccessor):
                               "act": "a_check",
                               "key": self.poll_service_config.key,
                               "ts": self.poll_service_config.ts,
-                              "wait": 20,
+                              "wait": self.app.config.vk_bot.long_poller_wait,
                           })
         async with self.session.get(url) as resp:
             data = await resp.json()

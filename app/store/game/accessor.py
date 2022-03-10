@@ -1,5 +1,5 @@
+import asyncio
 import json
-import random
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional
@@ -15,133 +15,168 @@ from app.game.models import (
     GameDC, GameModel,
     GameAskedQuestionModel, GameUserScoreModel, GameStatsDC, TopWinnerDC, TopScorerDC, ChatDC,
 )
-from app.quiz.models import QuestionDC, QuestionModel, AnswerModel, AnswerDC
+from app.quiz.models import QuestionModel, AnswerModel, AnswerDC
 from app.store.game.payload import BotActions
 from app.store.vk_api.responses import VKUser
 from app.utils import now
 from app.web.app import Application
 
 
+class States:
+    game_status = "gs"
+    game_id = "gi"
+    game_users = "gu"
+    who_s_turn = "wt"
+    game_prices = "gp"
+    current_question_id = "cqi"
+    current_price = "cp"
+    current_answer = "ca"
+    users_answered = "ua"
+    user_info = "ui"
+    previous_msg_text = "pmt"
+    flood = "fl"
+
+
+class Locks:
+    game_status = asyncio.Lock()
+    game_id = asyncio.Lock()
+    game_users = asyncio.Lock()
+    who_s_turn = asyncio.Lock()
+    game_prices = asyncio.Lock()
+    current_question_id = asyncio.Lock()
+    current_price = asyncio.Lock()
+    current_answer = asyncio.Lock()
+    users_answered = asyncio.Lock()
+    user_info = asyncio.Lock()
+    previous_msg_text = asyncio.Lock()
+    flood = asyncio.Lock()
+
+
 class StateAccessor(BaseAccessor):
     redis: Redis
+    locks: Locks
 
     async def connect(self, app: "Application"):
         self.redis = app.database.redis
+        self.locks = Locks()
 
     def restore_status(self, chat_id: int) -> None:
-        self.redis.set(f"game_status_{chat_id}", BotActions.main_menu)
-        self.redis.delete(f"game_id_{chat_id}")
-        self.redis.delete(f"game_users_{chat_id}")
-        self.redis.delete(f"who_s_turn_{chat_id}")
-        self.redis.delete(f"game_prices_{chat_id}")
-        self.redis.delete(f"current_question_id_{chat_id}")
+        self.redis.set(States.game_status + str(chat_id), BotActions.main_menu)
+        self.redis.delete(States.game_id + str(chat_id))
+        self.redis.delete(States.game_users + str(chat_id))
+        self.redis.delete(States.who_s_turn + str(chat_id))
+        self.redis.delete(States.game_prices + str(chat_id))
+        self.redis.delete(States.current_question_id + str(chat_id))
         self.question_ended(chat_id)
 
+    def question_ended(self, chat_id: int) -> None:
+        self.redis.delete(States.current_price + str(chat_id))
+        self.redis.delete(States.current_answer + str(chat_id))
+        self.redis.delete(States.users_answered + str(chat_id))
+
     def set_game_id(self, chat_id: int, game_id: int) -> None:
-        self.redis.set(f"game_id_{chat_id}", game_id)
+        self.redis.set(States.game_id + str(chat_id), game_id)
 
     def get_game_id(self, chat_id: int) -> Optional[int]:
-        value = self.redis.get(f"game_id_{chat_id}")
+        value = self.redis.get(States.game_id + str(chat_id))
         if value is None:
             return None
         return int(value.decode())
 
     def set_game_status(self, chat_id: int, status: str) -> None:
-        self.redis.set(f"game_status_{chat_id}", status)
+        self.redis.set(States.game_status + str(chat_id), status)
 
-    def get_game_status(self, chat_id: int) -> str:
-        return self.app.database.redis.get(f"game_status_{chat_id}").decode()
+    def get_game_status(self, chat_id: int) -> Optional[str]:
+        value = self.redis.get(States.game_status + str(chat_id))
+        if not value:
+            return None
+        return value.decode()
 
     def set_users_joined(self, chat_id: int, users: list[VKUser]) -> None:
         self.redis.set(
-            f"game_users_{chat_id}",
+            States.game_users + str(chat_id),
             json.dumps([i.as_dict() for i in users], ensure_ascii=False)
         )
 
     def get_joined_users(self, chat_id: int) -> list[VKUser]:
-        value = self.redis.get(f"game_users_{chat_id}")
+        value = self.redis.get(States.game_users + str(chat_id))
         if not value:
             return []
         return [VKUser(i) for i in json.loads(value.decode())]
 
     def set_user_info(self, user: VKUser) -> None:
-        self.redis.set(f"user_{user.id}", json.dumps(user.as_dict(), ensure_ascii=False))
+        self.redis.set(States.user_info + str(user.id), json.dumps(user.as_dict(), ensure_ascii=False))
 
     def get_user_info(self, user_id: int) -> VKUser:
-        value = self.redis.get(f"user_{user_id}")
+        value = self.redis.get(States.user_info + str(user_id))
         return VKUser(json.loads(value.decode()))
 
     def set_who_s_turn(self, chat_id: int, user_id: int) -> None:
-        self.redis.set(f"who_s_turn_{chat_id}", user_id)
+        self.redis.set(States.who_s_turn + str(chat_id), user_id)
 
     def get_who_s_turn(self, chat_id: int) -> int:
-        value = self.redis.get(f"who_s_turn_{chat_id}")
+        value = self.redis.get(States.who_s_turn + str(chat_id))
         return int(value.decode())
 
     def set_theme_chosen_prices(self, chat_id: int, prices: dict[int, list[int]]) -> None:
-        self.redis.set(f"game_prices_{chat_id}", json.dumps(prices))
+        self.redis.set(States.game_prices + str(chat_id), json.dumps(prices))
 
     def get_theme_chosen_prices(self, chat_id) -> dict[int, list[int]]:
-        value = self.redis.get(f"game_prices_{chat_id}")
+        value = self.redis.get(States.game_prices + str(chat_id))
         if not value:
             return {}
         return {int(k): v for k, v in json.loads(value.decode()).items()}
 
     def set_current_question_id(self, chat_id: int, question_id: int) -> None:
-        self.redis.set(f"current_question_id_{chat_id}", question_id)
+        self.redis.set(States.current_question_id + str(chat_id), question_id)
 
     def get_current_question_id(self, chat_id: int) -> int:
-        return int(self.redis.get(f"current_question_id_{chat_id}").decode())
+        return int(self.redis.get(States.current_question_id + str(chat_id)).decode())
 
     def set_current_price(self, chat_id: int, price: int) -> None:
-        self.redis.set(f"current_price_{chat_id}", price)
+        self.redis.set(States.current_price + str(chat_id), price)
 
     def get_current_price(self, chat_id: int) -> int:
-        return int(self.redis.get(f"current_price_{chat_id}").decode())
+        return int(self.redis.get(States.current_price + str(chat_id)).decode())
 
     def set_current_answer(self, chat_id: int, answer: AnswerDC) -> None:
         assert answer.is_correct
-        self.redis.set(f"current_answer_{chat_id}", json.dumps(answer.as_dict(), ensure_ascii=False))
+        self.redis.set(States.current_answer + str(chat_id), json.dumps(answer.as_dict(), ensure_ascii=False))
 
     def get_current_answer(self, chat_id: int) -> AnswerDC:
-        value = self.redis.get(f"current_answer_{chat_id}")
+        value = self.redis.get(States.current_answer + str(chat_id))
         return AnswerDC(**json.loads(value.decode()))
 
     def set_users_answered(self, chat_id: int, users: list[int]) -> None:
-        self.redis.set(f"users_answered_{chat_id}", json.dumps(users))
+        self.redis.set(States.users_answered + str(chat_id), json.dumps(users))
 
     def get_answered_users(self, chat_id: int) -> list[int]:
-        value = self.redis.get(f"users_answered_{chat_id}")
+        value = self.redis.get(States.users_answered + str(chat_id))
         if not value:
             return []
         return json.loads(value.decode())
 
-    def question_ended(self, chat_id: int) -> None:
-        self.redis.delete(f"current_price_{chat_id}")
-        self.redis.delete(f"current_answer_{chat_id}")
-        self.redis.delete(f"users_answered_{chat_id}")
-
     def set_previous_text(self, chat_id: int, text: str) -> None:
-        self.redis.set(f"text_{chat_id}", text)
+        self.redis.set(States.previous_msg_text + str(chat_id), text)
 
     def get_previous_text(self, chat_id: int) -> str:
-        return self.redis.get(f"text_{chat_id}").decode()
+        return self.redis.get(States.previous_msg_text + str(chat_id)).decode()
 
     def set_flood_detected(self, chat_id: int) -> None:
-        self.redis.set(f"flood_{chat_id}", now().isoformat())
+        self.redis.set(States.flood + str(chat_id), now().isoformat())
 
     def set_flood_not_detected(self, chat_id: int) -> None:
-        self.redis.delete(f"flood_{chat_id}")
+        self.redis.delete(States.flood + str(chat_id))
 
     def is_flood_detected(self, chat_id: int) -> bool:
         """
-        По прошествии часа можно снимать ограничения.
+        По прошествии 10 минут можно пробовать снимать ограничения.
         """
-        detected_at = self.redis.get(f"flood_{chat_id}")
+        detected_at = self.redis.get(States.flood + str(chat_id))
         if not detected_at:
             return False
         detected_at = datetime.fromisoformat(detected_at.decode())
-        if (now() - detected_at).total_seconds() / 60 / 60 > 1.0:
+        if (now() - detected_at).total_seconds() > 60 * 10:
             return False
         return True
 

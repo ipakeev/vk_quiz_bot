@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone, timedelta
 
 import pytest
@@ -10,6 +11,30 @@ from app.utils import now
 
 
 class TestStateAccessor:
+
+    async def test_lock(self, application, chat_id):
+        times = []
+        application.store.states.set_game_status(chat_id, BotActions.start_game)
+
+        async def task():
+            async with application.store.states.locks.game_status:
+                assert application.store.states.get_game_status(chat_id) == BotActions.start_game
+                await asyncio.sleep(1.0)
+                assert application.store.states.get_game_status(chat_id) == BotActions.start_game
+                application.store.states.set_game_status(chat_id, BotActions.main_menu)
+                times.append(now())
+                await asyncio.sleep(1.0)
+
+        asyncio.create_task(task())
+        await asyncio.sleep(0.1)
+
+        async with application.store.states.locks.game_status:
+            times.append(now())
+            assert application.store.states.get_game_status(chat_id) == BotActions.main_menu
+            application.store.states.set_game_status(chat_id, BotActions.show_scoreboard)
+
+        assert application.store.states.get_game_status(chat_id) == BotActions.show_scoreboard
+        assert times[0] < times[1]
 
     async def test_restore_status(self, application, chat_id):
         application.store.states.restore_status(chat_id)
@@ -51,6 +76,8 @@ class TestStateAccessor:
 
         application.store.states.restore_status(chat_id)
         assert application.store.states.get_game_status(chat_id) == BotActions.main_menu
+
+        assert application.store.states.get_game_status(chat_id + 1) is None
 
     async def test_joined_users(self, application, chat_id, user1, user2):
         assert application.store.states.get_joined_users(chat_id) == []
@@ -102,7 +129,7 @@ class TestStateAccessor:
         assert application.store.states.is_flood_detected(chat_id) is False
 
     async def test_flood_not_detected_after_hour(self, application, chat_id):
-        with freeze_time(datetime.now(tz=timezone.utc) - timedelta(hours=2)):
+        with freeze_time(datetime.now(tz=timezone.utc) - timedelta(minutes=10)):
             application.store.states.set_flood_detected(chat_id)
             assert application.store.states.is_flood_detected(chat_id) is True
         assert application.store.states.is_flood_detected(chat_id) is False

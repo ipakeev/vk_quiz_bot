@@ -15,6 +15,8 @@ class BotActions:
     empty = "empty"
     invite = "invite"
     main_menu = "main_menu"
+    game_rules = "game_rules"
+    bot_info = "bot_info"
     create_new_game = "create_new_game"
     join_users = "join_users"
     start_game = "start_game"
@@ -26,8 +28,7 @@ class BotActions:
     show_scoreboard = "show_scoreboard"
     confirm_stop_game = "confirm_stop_game"
     stop_game = "stop_game"
-    game_rules = "game_rules"
-    bot_info = "bot_info"
+    game_finished = "stop_game"
 
 
 class Stickers:
