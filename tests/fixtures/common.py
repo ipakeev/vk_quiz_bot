@@ -1,6 +1,5 @@
 import pathlib
-from unittest.mock import AsyncMock
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from aiohttp.test_utils import TestClient, loop_context
@@ -13,17 +12,24 @@ from app.web.app import setup_app, Application
 from app.web.config import Config
 
 
+# @pytest.fixture(scope="session", autouse=True)
+# def fake_vk():
+#     # crashes after test method...
+#     with aioresponses() as mock:
+#         mock.get(
+#             re.compile(r"^https://api\.vk\.com/method/groups\.getLongPollServer.+$"),
+#             status=200,
+#             payload={"response": {"key": "key",
+#                                   "server": "https://vk_server.com",
+#                                   "ts": "ts"}}
+#         )
+#         yield
+
+
 @pytest.fixture(scope="session")
 def loop():
     with loop_context() as _loop:
         yield _loop
-
-
-@pytest.fixture(scope="session", autouse=True)
-def vk_bot():
-    with patch("app.store.vk_api.bot.VKBot",
-               AsyncMock(spec=app.store.vk_api.bot.VKBot)):
-        yield
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -37,20 +43,6 @@ def vk_long_poller():
 def vk_messenger():
     with patch("app.store.vk_api.messenger.VKMessenger",
                AsyncMock(spec=app.store.vk_api.messenger.VKMessenger)):
-        yield
-
-
-@pytest.fixture(scope="session", autouse=True)
-def vk_updates_poller():
-    with patch("app.store.vk_api.updates_poller.VKUpdatesPoller",
-               AsyncMock(spec=app.store.vk_api.updates_poller.VKUpdatesPoller)):
-        yield
-
-
-@pytest.fixture(scope="session", autouse=True)
-def vk_updates_poller():
-    with patch("app.store.vk_api.updates_poller.VKUpdatesPoller",
-               AsyncMock(spec=app.store.vk_api.updates_poller.VKUpdatesPoller)):
         yield
 
 

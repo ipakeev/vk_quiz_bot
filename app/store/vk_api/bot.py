@@ -58,12 +58,13 @@ class VKBot(BaseAccessor):
         await self.gc_task
 
     async def garbage_collector(self):
+        seconds = self.app.config.vk_bot.bot_gc_sleep
         while self.is_running:
             for uid in list(self.tasks.keys()):
                 task = self.tasks.get(uid)
                 if task.done() or task.cancelled():
                     del self.tasks[uid]
-            await asyncio.sleep(10.0)
+            await asyncio.sleep(seconds)
 
     async def schedule_task(self, uid: str, coro: Awaitable[None], delay=0.0):
         async def task():
