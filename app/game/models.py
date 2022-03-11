@@ -1,5 +1,5 @@
 import typing
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
 
@@ -48,6 +48,7 @@ class UserModel(db.Model):
 @dataclass
 class ChatDC:
     id: int  # this is vk_id
+    joined_at: Optional[datetime] = None
 
 
 class ChatModel(db.Model):
@@ -55,6 +56,9 @@ class ChatModel(db.Model):
 
     id = db.Column(db.Integer(), primary_key=True, nullable=False)  # this is vk_id
     joined_at = db.Column(db.DateTime(timezone=True), default=now)
+
+    def as_dataclass(self) -> ChatDC:
+        return ChatDC(id=self.id, joined_at=self.joined_at)
 
 
 @dataclass
@@ -168,3 +172,6 @@ class GameStatsDC:
     duration_average: float
     top_winners: list[TopWinnerDC]
     top_scorers: list[TopScorerDC]
+
+    def as_dict(self) -> dict:
+        return asdict(self)

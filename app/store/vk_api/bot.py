@@ -7,7 +7,6 @@ from functools import wraps
 from typing import Optional
 
 from app.base.accessor import BaseAccessor
-from app.game.models import UserDC
 from app.store.game import keyboards
 from app.store.game.payload import (
     BasePayload, MainMenuPayload, CreateNewGamePayload, JoinUsersPayload,
@@ -59,12 +58,13 @@ class VKBot(BaseAccessor):
         await self.gc_task
 
     async def garbage_collector(self):
+        seconds = self.app.config.vk_bot.bot_gc_sleep
         while self.is_running:
             for uid in list(self.tasks.keys()):
                 task = self.tasks.get(uid)
                 if task.done() or task.cancelled():
                     del self.tasks[uid]
-            await asyncio.sleep(10.0)
+            await asyncio.sleep(seconds)
 
     async def schedule_task(self, uid: str, coro: Awaitable[None], delay=0.0):
         async def task():
@@ -191,33 +191,23 @@ def filter_who_s_turn(func: TypeMessageFunc):
     return wrapper
 
 
-def filter_game_status(equal: Optional[str] = None,
-                       not_equal: Optional[str] = None,
-                       text: Optional[str] = None):
-    assert equal or not_equal
-
-    def decorator(func: TypeMessageFunc):
-        @wraps(func)
-        async def wrapper(msg: MessageCallback, payload: BasePayload):
-            status = msg.states.get_game_status(msg.chat_id)
-            if equal and status != equal:
-                return await msg.show_snackbar(text or Texts.old_game_round)
-            if not_equal and status == not_equal:
-                return await msg.show_snackbar(text or Texts.old_game_round)
-            return await func(msg, payload)
-
-        return wrapper
-
-    return decorator
-
-
 async def invite(msg: ChatInviteRequest, _: BasePayload):
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) == BotActions.invite:
+            return
+        msg.states.set_game_status(msg.chat_id, BotActions.invite)
+
     await msg.games.joined_the_chat(msg.chat_id)
     await msg.send(attachment=Photos.main_wallpaper, keyboard=keyboards.invite())
 
 
 async def main_menu(msg: MessageCallback, payload: MainMenuPayload):
-    msg.states.restore_status(msg.chat_id)
+    async with msg.states.locks.game_status:
+        if payload.source != BotActions.main_menu:
+            if msg.states.get_game_status(msg.chat_id) == BotActions.main_menu:
+                return
+        msg.states.restore_status(msg.chat_id)
+
     await msg.games.restore_status(msg.chat_id)
     if payload.new:
         if payload.source == BotActions.main_menu:
@@ -230,66 +220,83 @@ async def main_menu(msg: MessageCallback, payload: MainMenuPayload):
 
 
 async def game_rules(msg: MessageCallback, _: GameRulesPayload):
-    await msg.edit(Texts.rules, keyboard=keyboards.back(BotActions.game_rules))
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) == BotActions.game_rules:
+            return
+        msg.states.set_game_status(msg.chat_id, BotActions.game_rules)
+    await msg.edit(Texts.rules, keyboard=keyboards.back(source=BotActions.game_rules))
 
 
 async def bot_info(msg: MessageCallback, _: BotInfoPayload):
-    await msg.edit(Texts.about, keyboard=keyboards.back(BotActions.bot_info))
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) == BotActions.bot_info:
+            return
+        msg.states.set_game_status(msg.chat_id, BotActions.bot_info)
+    await msg.edit(Texts.about, keyboard=keyboards.back(source=BotActions.bot_info))
 
 
-@filter_game_status(equal=BotActions.main_menu, text=Texts.game_is_already_started)
 async def create_new_game(msg: MessageCallback, _: CreateNewGamePayload):
-    msg.states.set_game_status(msg.chat_id, BotActions.join_users)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.main_menu:
+            return await msg.show_snackbar(Texts.game_is_already_started)
+        msg.states.set_game_status(msg.chat_id, BotActions.join_users)
 
     text = f"Присоединились к игре:{LINE_BREAK}😥 Пока никого..."
     await msg.edit(text, keyboard=keyboards.join_users())
 
 
-@filter_game_status(equal=BotActions.join_users, text=Texts.game_is_already_started)
 async def join_users(msg: MessageCallback, _: JoinUsersPayload):
-    users = msg.states.get_joined_users(msg.chat_id)
-    if any(msg.user_id == u.id for u in users):
-        return await msg.show_snackbar(Texts.you_are_already_joined)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.join_users:
+            return await msg.show_snackbar(Texts.game_is_already_started)
 
-    new_user = await msg.get_user_info()
-    if new_user is None:
-        return await msg.show_snackbar(Texts.error_try_again)
-    users.append(new_user)
-    msg.states.set_users_joined(msg.chat_id, users)
-    msg.states.set_user_info(new_user)
+    async with msg.states.locks.game_users:
+        users = msg.states.get_joined_users(msg.chat_id)
+        if any(msg.user_id == u.id for u in users):
+            return await msg.show_snackbar(Texts.you_are_already_joined)
+
+        new_user = await msg.get_user_info()
+        if new_user is None:
+            return await msg.show_snackbar(Texts.error_try_again)
+        msg.states.set_user_info(new_user)
+
+        users.append(new_user)
+        msg.states.set_users_joined(msg.chat_id, users)
 
     text = f"Присоединились к игре:{LINE_BREAK}"
     text += LINE_BREAK.join(f"👤 {u.first_name} {u.last_name}" for i, u in enumerate(users))
     await msg.edit(text, keyboard=keyboards.join_users())
 
 
-@filter_game_status(equal=BotActions.join_users, text=Texts.game_is_already_started)
 async def start_game(msg: MessageCallback, _: StartGamePayload):
-    users = msg.states.get_joined_users(msg.chat_id)
-    if not users:
-        return await msg.show_snackbar(Texts.nobody_joined)
-    if not any(msg.user_id == u.id for u in users):
-        return await msg.show_snackbar(Texts.firstly_join_the_game)
-    msg.states.set_game_status(msg.chat_id, BotActions.choose_theme)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.join_users:
+            return await msg.show_snackbar(Texts.game_is_already_started)
+        users = msg.states.get_joined_users(msg.chat_id)
+        if not users:
+            return await msg.show_snackbar(Texts.nobody_joined)
+        if not any(msg.user_id == u.id for u in users):
+            return await msg.show_snackbar(Texts.firstly_join_the_game)
+        msg.states.set_game_status(msg.chat_id, BotActions.choose_theme)
 
-    user_models = await msg.games.create_users(
-        [UserDC(**i.as_dict()) for i in users]
-    )
-    game_model = await msg.games.create_game(msg.chat_id, user_models)
-    msg.states.set_game_id(msg.chat_id, game_model.id)
+    user_dcs = await msg.games.create_users(users)
+    game_dc = await msg.games.create_game(msg.chat_id, user_dcs)
+    msg.states.set_game_id(msg.chat_id, game_dc.id)
     msg.states.set_who_s_turn(msg.chat_id, msg.user_id)
 
-    await choose_theme(msg, ChooseThemePayload(game_id=game_model.id, new=True))
+    await choose_theme(msg, ChooseThemePayload(game_id=game_dc.id, new=True))
 
 
 @filter_game_id
-@filter_game_status(equal=BotActions.choose_theme)
 async def choose_theme(msg: MessageCallback, payload: ChooseThemePayload):
     # на view выбора темы может перейти любой пользователь,
     # но выбирать саму тему может только тот, чья сейчас очередь
-    msg.states.set_game_status(msg.chat_id, BotActions.choose_question)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.choose_theme:
+            return await msg.show_snackbar(Texts.old_game_round)
+        msg.states.set_game_status(msg.chat_id, BotActions.choose_question)
 
-    themes = (await msg.quiz.list_themes()).themes
+    themes = await msg.quiz.list_themes()
     theme_chosen_prices = msg.states.get_theme_chosen_prices(msg.chat_id)
     exclude_theme_ids = [k for k, v in theme_chosen_prices.items() if 0 not in v]
     themes = [i for i in themes if i.id not in exclude_theme_ids]
@@ -320,9 +327,11 @@ async def choose_theme(msg: MessageCallback, payload: ChooseThemePayload):
 
 @filter_game_id
 @filter_who_s_turn
-@filter_game_status(equal=BotActions.choose_question)
 async def choose_question(msg: MessageCallback, payload: ChooseQuestionPayload):
-    msg.states.set_game_status(msg.chat_id, BotActions.send_question)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.choose_question:
+            return await msg.show_snackbar(Texts.old_game_round)
+        msg.states.set_game_status(msg.chat_id, BotActions.send_question)
 
     # всего 5 вопросов в теме, 1 = вопрос уже выбран ранее
     chosen_prices = msg.states.get_theme_chosen_prices(msg.chat_id).get(payload.theme_id, [0] * 5)
@@ -350,11 +359,14 @@ async def choose_question(msg: MessageCallback, payload: ChooseQuestionPayload):
 
 @filter_game_id
 @filter_who_s_turn
-@filter_game_status(equal=BotActions.send_question)
 async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
     if payload.price == 0:
         return await msg.event_ok()
-    msg.states.set_game_status(msg.chat_id, BotActions.get_answer)
+
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.send_question:
+            return await msg.show_snackbar(Texts.old_game_round)
+        msg.states.set_game_status(msg.chat_id, BotActions.get_answer)
 
     # всего 5 вопросов в теме, 1 = вопрос уже выбран ранее
     theme_chosen_prices = msg.states.get_theme_chosen_prices(msg.chat_id)
@@ -363,7 +375,9 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
     theme_chosen_prices[payload.theme_id] = chosen_prices
     msg.states.set_theme_chosen_prices(msg.chat_id, theme_chosen_prices)
 
-    question = await msg.games.get_new_question(payload.game_id, payload.theme_id)
+    question_models = await msg.games.get_remaining_questions(payload.game_id, payload.theme_id)
+    question = random.choice(question_models).as_dataclass()
+    await msg.games.set_question_asked(payload.game_id, question)
     random.shuffle(question.answers)
     msg.states.set_current_question_id(msg.chat_id, question.id)
     msg.states.set_current_answer(msg.chat_id, [i for i in question.answers if i.is_correct][0])
@@ -406,7 +420,11 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
         else:
             await msg.edit(text, keyboard=keyboard)
             await asyncio.sleep(msg.app.config.vk_bot.sleep_before_show_answer)
-        msg.states.set_game_status(msg.chat_id, BotActions.show_answer)
+
+        async with msg.states.locks.game_status:
+            if msg.states.get_game_status(msg.chat_id) == BotActions.get_answer:
+                msg.states.set_game_status(msg.chat_id, BotActions.show_answer)
+
         await show_answer(msg, ShowAnswerPayload(game_id=payload.game_id,
                                                  question=question.title,
                                                  winner=None))
@@ -415,16 +433,18 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
 
 
 @filter_game_id
-@filter_game_status(equal=BotActions.get_answer, text=Texts.too_late)
 async def get_answer(msg: MessageCallback, payload: GetAnswerPayload):
-    answered_users = msg.states.get_answered_users(msg.chat_id)
-    if msg.user_id in answered_users:
-        return await msg.show_snackbar(Texts.you_are_already_answered)
-    answered_users.append(msg.user_id)
-    msg.states.set_users_answered(msg.chat_id, answered_users)
-    if msg.states.get_current_answer(msg.chat_id).title != payload.answer:
-        return await msg.event_ok()
-    msg.states.set_game_status(msg.chat_id, BotActions.show_answer)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.get_answer:
+            return await msg.show_snackbar(Texts.too_late)
+        answered_users = msg.states.get_answered_users(msg.chat_id)
+        if msg.user_id in answered_users:
+            return await msg.show_snackbar(Texts.you_are_already_answered)
+        answered_users.append(msg.user_id)
+        msg.states.set_users_answered(msg.chat_id, answered_users)
+        if msg.states.get_current_answer(msg.chat_id).title != payload.answer:
+            return await msg.event_ok()
+        msg.states.set_game_status(msg.chat_id, BotActions.show_answer)
 
     await msg.app.store.vk_bot.cancel_task(payload.uid)
     await show_answer(msg, ShowAnswerPayload(game_id=payload.game_id,
@@ -433,9 +453,11 @@ async def get_answer(msg: MessageCallback, payload: GetAnswerPayload):
 
 
 @filter_game_id
-@filter_game_status(equal=BotActions.show_answer, text=Texts.too_late)
 async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
-    msg.states.set_game_status(msg.chat_id, BotActions.show_scoreboard)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.show_answer:
+            return await msg.show_snackbar(Texts.too_late)
+        msg.states.set_game_status(msg.chat_id, BotActions.show_scoreboard)
 
     await msg.edit(f"Вопрос:{LINE_BREAK}🔎 {payload.question}")
     await msg.send(sticker_id=Stickers.dog_wait_sec)
@@ -452,7 +474,7 @@ async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
     question_id = msg.states.get_current_question_id(msg.chat_id)
     await msg.games.set_game_question_result(payload.game_id,
                                              question_id,
-                                             winner_id=payload.winner)
+                                             is_answered=payload.winner is not None)
 
     answer = msg.states.get_current_answer(msg.chat_id)
     await msg.send(f"Правильный ответ:{LINE_BREAK}💡 {answer.title}{LINE_BREAK}📖 {answer.description}")
@@ -481,9 +503,11 @@ async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
 
 
 @filter_game_id
-@filter_game_status(equal=BotActions.show_scoreboard)
 async def show_scoreboard(msg: MessageCallback, payload: ShowScoreboardPayload):
-    msg.states.set_game_status(msg.chat_id, BotActions.choose_theme)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) != BotActions.show_scoreboard:
+            return await msg.show_snackbar(Texts.old_game_round)
+        msg.states.set_game_status(msg.chat_id, BotActions.choose_theme)
 
     scores = await msg.games.get_game_scores(payload.game_id)
     scores.sort(key=lambda i: i.score, reverse=True)
@@ -509,10 +533,12 @@ async def show_scoreboard(msg: MessageCallback, payload: ShowScoreboardPayload):
 
 
 @filter_game_id
-@filter_game_status(not_equal=BotActions.show_scoreboard, text=Texts.too_late)
 async def confirm_stop_game(msg: MessageCallback, payload: ConfirmStopGamePayload):
     # остановить игру может любой пользователь
-    msg.states.set_game_status(msg.chat_id, BotActions.show_scoreboard)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) == BotActions.show_scoreboard:
+            return await msg.show_snackbar(Texts.too_late)
+        msg.states.set_game_status(msg.chat_id, BotActions.show_scoreboard)
 
     await msg.delete()
     await msg.send("Завершить игру?", keyboard=Keyboard(inline=True, buttons=[
@@ -528,10 +554,12 @@ async def confirm_stop_game(msg: MessageCallback, payload: ConfirmStopGamePayloa
 
 
 @filter_game_id
-@filter_game_status(not_equal=BotActions.main_menu, text=Texts.game_is_already_stopped)
 async def stop_game(msg: MessageCallback, payload: StopGamePayload):
     # остановить игру может любой пользователь
-    msg.states.set_game_status(msg.chat_id, BotActions.main_menu)
+    async with msg.states.locks.game_status:
+        if msg.states.get_game_status(msg.chat_id) == BotActions.game_finished:
+            return await msg.show_snackbar(Texts.game_is_already_stopped)
+        msg.states.set_game_status(msg.chat_id, BotActions.game_finished)
 
     users = await msg.games.get_game_scores(payload.game_id)
     users.sort(key=lambda i: i.score, reverse=True)

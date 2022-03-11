@@ -4,8 +4,8 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.base.accessor import BaseAccessor
 from app.quiz.models import (
-    ThemeDC, ThemeModel, ThemesListDC,
-    QuestionDC, QuestionModel, QuestionsListDC,
+    ThemeDC, ThemeModel,
+    QuestionDC, QuestionModel,
     AnswerDC, AnswerModel,
 )
 
@@ -32,10 +32,10 @@ class QuizAccessor(BaseAccessor):
         if theme_model:
             return theme_model.as_dataclass()
 
-    async def list_themes(self) -> ThemesListDC:
+    async def list_themes(self) -> list[ThemeDC]:
         theme_models: list[ThemeModel] = await ThemeModel.query.gino.all()
         # используется ThemesListDC, так как при list[ThemeDC] marshmallow.dump() не выдает результат
-        return ThemesListDC(themes=[i.as_dataclass() for i in theme_models])
+        return [i.as_dataclass() for i in theme_models]
 
     async def create_question(self, theme_id: int, title: str, answers: list[AnswerDC]) -> QuestionDC:
         # валидация того, что данный вопрос с ответами уже есть в базе, происходит на уровне view
@@ -51,7 +51,7 @@ class QuizAccessor(BaseAccessor):
             ).gino.all()
             return question_model.as_dataclass(answer_models=answer_models)
 
-    async def list_questions(self, theme_id: Optional[int] = None) -> QuestionsListDC:
+    async def list_questions(self, theme_id: Optional[int] = None) -> list[QuestionDC]:
         query = QuestionModel.join(AnswerModel, QuestionModel.id == AnswerModel.question_id).select()
         if theme_id is not None:
             query = query.where(QuestionModel.theme_id == theme_id)
@@ -60,15 +60,18 @@ class QuizAccessor(BaseAccessor):
                 answers=AnswerModel.load()
             )
         ).all()
-        return QuestionsListDC(questions=[i.as_dataclass() for i in questions])
+        return [i.as_dataclass() for i in questions]
 
     async def create_answers(self, question_id, answers: list[AnswerDC]) -> list[AnswerModel]:
         # за один поход в базу добавляем все ответы
         # валидация того, что данный вопрос с ответами уже есть в базе, происходит на уровне view
         # on_conflict_do_update требует уникальный ключ. Значит, необходимо изменить первичный ключ модели?
         await AnswerModel.insert().gino.all([dict(question_id=question_id, **i.as_dict()) for i in answers])
-        answer_models = await AnswerModel.query.where(AnswerModel.question_id == question_id).gino.all()
-        return answer_models
+        return await AnswerModel.query.where(AnswerModel.question_id == question_id).gino.all()
+
+    async def get_answers(self, question_id) -> list[AnswerDC]:
+        answers: list[AnswerModel] = await AnswerModel.query.where(AnswerModel.question_id == question_id).gino.all()
+        return [i.as_dataclass() for i in answers]
 
     async def delete_theme(self, theme_id: int) -> Optional[ThemeDC]:
         theme: ThemeModel = await ThemeModel \

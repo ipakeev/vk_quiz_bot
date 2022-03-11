@@ -43,6 +43,10 @@ class VKBotConfig:
     animate_timer: bool  # set False to avoid 'Flood control: too much messages sent to user'
     sleep_before_show_variants: int
     sleep_before_show_answer: int
+    long_poller_wait: int
+    updates_poller_queue_poller_sleep: float
+    updates_poller_gc_sleep: float
+    bot_gc_sleep: float
 
 
 @dataclass
