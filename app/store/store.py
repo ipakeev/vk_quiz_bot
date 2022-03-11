@@ -21,6 +21,6 @@ class Store:
         self.games = GameAccessor(app)
         self.vk_long_poller = VKLongPoller(app)
         self.vk_updates_queue = Queue()
-        self.vk_messenger = VKMessenger(app)
         self.vk_updates_poller = VKUpdatesPoller(app)
         self.vk_bot = VKBot(app)
+        self.vk_messenger = VKMessenger(app)  # messenger must be disconnected at last

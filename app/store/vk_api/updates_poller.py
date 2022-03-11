@@ -33,8 +33,11 @@ class VKUpdatesPoller(BaseAccessor):
         self.app.logger.info("shutdown vk updates poller")
         self.is_running = False
         for task in self.tasks:
+            if task.done() or task.cancelled():
+                continue
             await task
-        await self.gc_task
+        if not self.gc_task.done():
+            await self.gc_task
 
     async def queue_poller(self):
         queue = self.app.store.vk_updates_queue
