@@ -16,6 +16,7 @@ if typing.TYPE_CHECKING:
 
 class ErrorCodes:
     flood_detected = 9
+    too_old_message = 909
 
 
 class VKMessenger(BaseAccessor):

@@ -1,0 +1,37 @@
+version: "4.5.1"
+
+services:
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+      POSTGRES_DB: gino
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./volumes:/var/lib/postgresql/data
+    networks:
+      - quiz
+
+  redis:
+    image: redis:latest
+    environment:
+      REDIS_DB: 0
+    volumes:
+      - ./volumes/redis:/data
+    networks:
+      - quiz
+
+  server:
+    image: ipakeev/vk_quiz_bot:latest
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - 8080:8080
+    networks:
+      - quiz
+
+networks:
+  quiz:
+    driver: bridge

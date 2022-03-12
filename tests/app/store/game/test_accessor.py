@@ -17,7 +17,7 @@ class TestStateAccessor:
         application.store.states.set_game_status(chat_id, BotActions.start_game)
 
         async def task():
-            async with application.store.states.locks.game_status:
+            async with application.store.states.locks.game_status(chat_id):
                 assert application.store.states.get_game_status(chat_id) == BotActions.start_game
                 await asyncio.sleep(1.0)
                 assert application.store.states.get_game_status(chat_id) == BotActions.start_game
@@ -28,7 +28,7 @@ class TestStateAccessor:
         asyncio.create_task(task())
         await asyncio.sleep(0.1)
 
-        async with application.store.states.locks.game_status:
+        async with application.store.states.locks.game_status(chat_id):
             times.append(now())
             assert application.store.states.get_game_status(chat_id) == BotActions.main_menu
             application.store.states.set_game_status(chat_id, BotActions.show_scoreboard)

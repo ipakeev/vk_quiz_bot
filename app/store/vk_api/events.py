@@ -87,7 +87,9 @@ class BaseMessageEvent(BaseEvent):
                                                             keyboard=keyboard,
                                                             carousel=carousel)
             if result is not True:
-                if result == ErrorCodes.flood_detected and not self.states.is_flood_detected(self.chat_id):
+                if result == ErrorCodes.too_old_message:
+                    return await self.send(message=message, attachment=attachment, keyboard=keyboard, carousel=carousel)
+                elif result == ErrorCodes.flood_detected and not self.states.is_flood_detected(self.chat_id):
                     self.states.set_flood_detected(self.chat_id)
                     if isinstance(self, MessageCallback):
                         await self.show_snackbar(Texts.flood_detected)
@@ -105,7 +107,9 @@ class BaseMessageEvent(BaseEvent):
         while not self.app.store.vk_messenger.session.closed:
             result = await self.app.store.vk_messenger.delete(self.chat_id, self.conversation_message_id)
             if result is not True:
-                if result == ErrorCodes.flood_detected:
+                if result == ErrorCodes.too_old_message:
+                    return
+                elif result == ErrorCodes.flood_detected:
                     self.states.set_flood_detected(self.chat_id)
                 self.app.logger.info("sleeping 30 sec")
                 await asyncio.sleep(30.0)

@@ -15,7 +15,7 @@ class TestVKBot:
         await asyncio.sleep(0.5)
         assert len(application.store.vk_bot.tasks) == 1
 
-        await application.store.vk_bot.cancel_task(uid)
+        application.store.vk_bot.cancel_task(uid)
         await asyncio.sleep(0.5)
         assert len(application.store.vk_bot.tasks) == 0
 

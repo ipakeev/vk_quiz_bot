@@ -11,7 +11,7 @@ from app.web.config import DatabaseConfig
 
 register_models()
 
-config_file = pathlib.Path(__file__).resolve().parent.parent / 'config.yaml'
+config_file = pathlib.Path(__file__).resolve().parent.parent / 'config.yml'
 with open(config_file) as f:
     raw_config = yaml.safe_load(f)
     db_config = DatabaseConfig(**raw_config['database'])

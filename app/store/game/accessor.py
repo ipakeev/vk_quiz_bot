@@ -38,18 +38,24 @@ class States:
 
 
 class Locks:
-    game_status = asyncio.Lock()
-    game_id = asyncio.Lock()
-    game_users = asyncio.Lock()
-    who_s_turn = asyncio.Lock()
-    game_prices = asyncio.Lock()
-    current_question_id = asyncio.Lock()
-    current_price = asyncio.Lock()
-    current_answer = asyncio.Lock()
-    users_answered = asyncio.Lock()
-    user_info = asyncio.Lock()
-    previous_msg_text = asyncio.Lock()
-    flood = asyncio.Lock()
+
+    def __init__(self):
+        self._game_status_locks: dict[int, asyncio.Lock] = {}
+        self._game_users_locks: dict[int, asyncio.Lock] = {}
+
+    def game_status(self, chat_id: int) -> asyncio.Lock:
+        lock = self._game_status_locks.get(chat_id)
+        if not lock:
+            lock = asyncio.Lock()
+            self._game_status_locks[chat_id] = lock
+        return lock
+
+    def game_users(self, chat_id: int) -> asyncio.Lock:
+        lock = self._game_users_locks.get(chat_id)
+        if not lock:
+            lock = asyncio.Lock()
+            self._game_users_locks[chat_id] = lock
+        return lock
 
 
 class StateAccessor(BaseAccessor):

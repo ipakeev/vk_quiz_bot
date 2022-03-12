@@ -48,7 +48,7 @@ def vk_messenger():
 
 @pytest.fixture(scope="session")
 def server() -> Application:
-    config_file = pathlib.Path(__file__).resolve().parent.parent / "test_config.yaml"
+    config_file = pathlib.Path(__file__).resolve().parent.parent / "test_config.yml"
     _app = setup_app(config_file)
     return _app
 
