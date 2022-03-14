@@ -1,7 +1,7 @@
-import asyncio
 import json
 import random
 import typing
+from functools import wraps
 from typing import Optional, Union
 
 from aiohttp import ClientSession, TCPConnector
@@ -19,13 +19,27 @@ class ErrorCodes:
     too_old_message = 909
 
 
+def catch(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs) -> dict:
+        self: VKMessenger = args[0]
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            self.app.logger.error(e)
+            return dict(error="error")
+
+    return wrapper
+
+
 class VKMessenger(BaseAccessor):
     API_PATH = "https://api.vk.com/method/"
 
     session: ClientSession
 
     async def connect(self, app: "Application"):
-        self.session = ClientSession(connector=TCPConnector(verify_ssl=False))
+        # force_close to avoid errors with close connection
+        self.session = ClientSession(connector=TCPConnector(verify_ssl=False, force_close=True))
 
     async def disconnect(self, app: "Application"):
         await self.session.close()
@@ -35,22 +49,16 @@ class VKMessenger(BaseAccessor):
         params["v"] = "5.131"
         return self.API_PATH + method + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
 
+    @catch
     async def query(self, url: str, method="GET") -> dict:
-        while not self.session.closed:
-            try:
-                async with self.session.request(method, url) as resp:
-                    if not resp.ok:
-                        self.app.logger.warning(f"status={resp.status}, method={method}, url={url}")
-                        return dict(error="error")
+        async with self.session.request(method, url) as resp:
+            if not resp.ok:
+                self.app.logger.warning(f"status={resp.status}, method={method}, url={url}")
+                return dict(error="error")
 
-                    data = await resp.json()
-                    self.app.logger.debug(f"status={resp.status}, method={method}")
-                    return data
-            except Exception as e:
-                self.app.logger.error(e)
-                await asyncio.sleep(5.0)
-        # if session is closed
-        return dict(error="error")
+            data = await resp.json()
+            self.app.logger.debug(f"status={resp.status}, method={method}")
+            return data
 
     async def send(self,
                    chat_id: int,
