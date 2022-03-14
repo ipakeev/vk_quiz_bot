@@ -1,6 +1,7 @@
 import asyncio
 import typing
 from dataclasses import dataclass
+from functools import wraps
 
 from aiohttp import ClientSession, TCPConnector
 
@@ -25,6 +26,20 @@ class PollServiceConfig:
     ts: str
 
 
+def catch(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        self: VKLongPoller = args[0]
+        while 1:
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                self.app.logger.warning(e)
+                await asyncio.sleep(5.0)
+
+    return wrapper
+
+
 class VKLongPoller(BaseAccessor):
     API_PATH = "https://api.vk.com/method/"
 
@@ -36,7 +51,8 @@ class VKLongPoller(BaseAccessor):
         self.poller = LongPollingLoop(app)
 
     async def connect(self, app: "Application"):
-        self.session = ClientSession(connector=TCPConnector(verify_ssl=False))
+        # force_close to avoid errors with close connection
+        self.session = ClientSession(connector=TCPConnector(verify_ssl=False, force_close=True))
         await self.init_long_poll_service()
         await self.poller.start_polling()
 
@@ -44,6 +60,7 @@ class VKLongPoller(BaseAccessor):
         await self.poller.stop_polling()
         await self.session.close()
 
+    @catch
     async def init_long_poll_service(self):
         url = build_query(host=self.API_PATH,
                           method="groups.getLongPollServer",
@@ -57,6 +74,7 @@ class VKLongPoller(BaseAccessor):
                                                          server=data["server"],
                                                          ts=data["ts"])
 
+    @catch
     async def query_long_poll(self):
         url = build_query(host=self.poll_service_config.server,
                           method="",
