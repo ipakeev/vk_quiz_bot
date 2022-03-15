@@ -427,24 +427,30 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
     msg.states.set_theme_chosen_prices(msg.chat_id, theme_chosen_prices)
 
     question_models = await msg.games.get_remaining_questions(payload.game_id, payload.theme_id)
-    question = random.choice(question_models).as_dataclass()
-    await msg.games.set_question_asked(payload.game_id, question)
-    random.shuffle(question.answers)
-    msg.states.set_current_question_id(msg.chat_id, question.id)
-    msg.states.set_current_answer(msg.chat_id, [i for i in question.answers if i.is_correct][0])
+    question_model = random.choice(question_models)
+    question_dc = question_model.as_dataclass()
+    await msg.games.set_question_asked(payload.game_id, question_dc)
+    random.shuffle(question_dc.answers)
+    msg.states.set_current_question(msg.chat_id, question_dc)
+
+    # id, not title, to avoid big length of the payload
+    # answer_dc has no id, so we use answer model
+    answer_id = [i.id for i in question_model.answers if i.is_correct][0]
+    msg.states.set_current_answer_id(msg.chat_id, answer_id)
+    msg.states.set_current_answer(msg.chat_id, [i for i in question_dc.answers if i.is_correct][0])
     msg.states.set_current_price(msg.chat_id, payload.price)
 
     text = f"Вопрос на {payload.price} очков:{LINE_BREAK}{LINE_BREAK}" \
-           f"🔎 {question.title}{LINE_BREAK}{LINE_BREAK}"
-    answers = iter(i.title for i in question.answers)
+           f"🔎 {question_dc.title}{LINE_BREAK}{LINE_BREAK}"
+    answers = iter(question_model.answers)
     task_uid = generate_uuid()
 
     def get_button() -> CallbackButton:
         answer = next(answers)
-        return CallbackButton(answer[:40],
+        return CallbackButton(answer.title[:40],
                               payload=GetAnswerPayload(game_id=payload.game_id,
-                                                       question=question.title,
-                                                       answer=answer,
+                                                       question_id=question_dc.id,
+                                                       answer_id=answer.id,
                                                        uid=task_uid),
                               color=ButtonColor.white)
 
@@ -477,7 +483,7 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
                 msg.states.set_game_status(msg.chat_id, BotActions.show_answer)
 
         await show_answer(msg, ShowAnswerPayload(game_id=payload.game_id,
-                                                 question=question.title,
+                                                 question_id=question_dc.id,
                                                  winner=None))
 
     await msg.app.store.vk_bot.schedule_task(task_uid, timer())
@@ -486,6 +492,9 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
 @filter_game_id
 @filter_playing_users
 async def get_answer(msg: MessageCallback, payload: GetAnswerPayload):
+    if msg.states.get_current_question(msg.chat_id).id != payload.question_id:
+        return await msg.show_snackbar(Texts.old_game_round)
+
     async with msg.states.locks.game_status(msg.chat_id):
         if msg.states.get_game_status(msg.chat_id) != BotActions.get_answer:
             return await msg.show_snackbar(Texts.too_late)
@@ -496,24 +505,28 @@ async def get_answer(msg: MessageCallback, payload: GetAnswerPayload):
         answered_users.append(msg.user_id)
         msg.states.set_users_answered(msg.chat_id, answered_users)
 
-        answer = msg.states.get_current_answer(msg.chat_id).title
+        answer_id = msg.states.get_current_answer_id(msg.chat_id)
         if len(answered_users) == len(msg.states.get_joined_users(msg.chat_id)):
-            winner = msg.user_id if answer == payload.answer else None
+            winner = msg.user_id if answer_id == payload.answer_id else None
         else:
-            if answer != payload.answer:
+            if answer_id != payload.answer_id:
                 return await msg.event_ok()
             winner = msg.user_id
         msg.states.set_game_status(msg.chat_id, BotActions.show_answer)
 
     msg.app.store.vk_bot.cancel_task(payload.uid)
     await show_answer(msg, ShowAnswerPayload(game_id=payload.game_id,
-                                             question=payload.question,
+                                             question_id=payload.question_id,
                                              winner=winner))
 
 
 @filter_game_id
 @filter_playing_users
 async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
+    question = msg.states.get_current_question(msg.chat_id)
+    if question.id != payload.question_id:
+        return await msg.show_snackbar(Texts.old_game_round)
+
     is_passed = False
     async with msg.states.locks.game_status(msg.chat_id):
         if msg.states.get_game_status(msg.chat_id) == BotActions.show_answer:
@@ -522,7 +535,7 @@ async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
     if not is_passed:
         return await msg.show_snackbar(Texts.too_late)
 
-    await msg.edit(f"Вопрос:{LINE_BREAK}🔎 {payload.question}")
+    await msg.edit(f"Вопрос:{LINE_BREAK}🔎 {question.title}")
     await msg.send(sticker_id=Stickers.dog_wait_sec)
     await asyncio.sleep(2.0)
 
@@ -534,9 +547,8 @@ async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
                                        wrong_answered_users_ids,
                                        current_price)
 
-    question_id = msg.states.get_current_question_id(msg.chat_id)
     await msg.games.set_game_question_result(payload.game_id,
-                                             question_id,
+                                             question.id,
                                              is_answered=payload.winner is not None)
 
     answer = msg.states.get_current_answer(msg.chat_id)

@@ -148,15 +148,15 @@ class SendQuestionPayload(BaseGamePayload):
 
 @dataclass
 class GetAnswerPayload(BaseGamePayload):
-    question: str
-    answer: str
+    question_id: int
+    answer_id: int
     uid: str
     action: str = BotActions.get_answer
 
 
 @dataclass
 class ShowAnswerPayload(BaseGamePayload):
-    question: str
+    question_id: int
     winner: Optional[int] = None
     action: str = BotActions.show_answer
 
@@ -209,12 +209,12 @@ class PayloadFactory:
                                        price=payload["price"])
         elif action == BotActions.get_answer:
             return GetAnswerPayload(game_id=payload["game_id"],
-                                    question=payload["question"],
-                                    answer=payload["answer"],
+                                    question_id=payload["question_id"],
+                                    answer_id=payload["answer_id"],
                                     uid=payload["uid"])
         elif action == BotActions.show_answer:
             return ShowAnswerPayload(game_id=payload["game_id"],
-                                     question=payload["question"],
+                                     question_id=payload["question_id"],
                                      winner=payload.get('winner'))
         elif action == BotActions.show_scoreboard:
             return ShowScoreboardPayload(game_id=payload["game_id"],

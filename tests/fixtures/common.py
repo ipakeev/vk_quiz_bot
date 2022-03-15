@@ -66,14 +66,14 @@ def cli(aiohttp_client, loop, server, chat_id) -> TestClient:
 
 
 @pytest.fixture
-async def authed_cli(cli, app_config) -> TestClient:
-    await cli.post(
+def authed_cli(loop, cli, app_config) -> TestClient:
+    loop.run_until_complete(cli.post(
         "/admin.login",
         data={
             "email": app_config.admin.email,
             "password": app_config.admin.password,
         },
-    )
+    ))
     yield cli
 
 
