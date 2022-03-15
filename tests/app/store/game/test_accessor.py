@@ -5,7 +5,7 @@ import pytest
 from freezegun import freeze_time
 
 from app.game.models import UserDC
-from app.quiz.models import AnswerDC
+from app.quiz.models import AnswerDC, QuestionDC
 from app.store.game.payload import BotActions
 from app.utils import now
 
@@ -46,7 +46,7 @@ class TestStateAccessor:
         with pytest.raises(AttributeError):
             application.store.states.get_who_s_turn(chat_id)
         with pytest.raises(AttributeError):
-            application.store.states.get_current_question_id(chat_id)
+            application.store.states.get_current_question(chat_id)
         with pytest.raises(AttributeError):
             application.store.states.get_current_price(chat_id)
         with pytest.raises(AttributeError):
@@ -100,9 +100,10 @@ class TestStateAccessor:
         application.store.states.set_theme_chosen_prices(chat_id, chosen_prices)
         assert application.store.states.get_theme_chosen_prices(chat_id) == chosen_prices
 
-    async def test_current_question_id(self, application, chat_id):
-        application.store.states.set_current_question_id(chat_id, 3)
-        assert application.store.states.get_current_question_id(chat_id) == 3
+    async def test_current_question(self, application, chat_id):
+        question = QuestionDC(id=3, theme_id=1, title="title", answers=[])
+        application.store.states.set_current_question(chat_id, question)
+        assert application.store.states.get_current_question(chat_id) == question
 
     async def test_current_price(self, application, chat_id):
         application.store.states.set_current_price(chat_id, 500)
