@@ -15,7 +15,7 @@ from app.game.models import (
     GameDC, GameModel,
     GameAskedQuestionModel, GameUserScoreModel, GameStatsDC, TopWinnerDC, TopScorerDC, ChatDC,
 )
-from app.quiz.models import QuestionModel, AnswerModel, AnswerDC
+from app.quiz.models import QuestionModel, AnswerModel, AnswerDC, QuestionDC
 from app.store.game.payload import BotActions
 from app.store.vk_api.responses import VKUser
 from app.utils import now
@@ -30,7 +30,9 @@ class States:
     game_prices = "gp"
     current_question_id = "cqi"
     current_price = "cp"
+    current_question = "cq"
     current_answer = "ca"
+    current_answer_id = "cai"
     users_answered = "ua"
     user_info = "ui"
     previous_msg_text = "pmt"
@@ -77,6 +79,8 @@ class StateAccessor(BaseAccessor):
 
     def question_ended(self, chat_id: int) -> None:
         self.redis.delete(States.current_price + str(chat_id))
+        self.redis.delete(States.current_question + str(chat_id))
+        self.redis.delete(States.current_answer_id + str(chat_id))
         self.redis.delete(States.current_answer + str(chat_id))
         self.redis.delete(States.users_answered + str(chat_id))
 
@@ -133,17 +137,25 @@ class StateAccessor(BaseAccessor):
             return {}
         return {int(k): v for k, v in json.loads(value.decode()).items()}
 
-    def set_current_question_id(self, chat_id: int, question_id: int) -> None:
-        self.redis.set(States.current_question_id + str(chat_id), question_id)
-
-    def get_current_question_id(self, chat_id: int) -> int:
-        return int(self.redis.get(States.current_question_id + str(chat_id)).decode())
-
     def set_current_price(self, chat_id: int, price: int) -> None:
         self.redis.set(States.current_price + str(chat_id), price)
 
     def get_current_price(self, chat_id: int) -> int:
         return int(self.redis.get(States.current_price + str(chat_id)).decode())
+
+    def set_current_question(self, chat_id: int, question: QuestionDC) -> None:
+        self.redis.set(States.current_question + str(chat_id), json.dumps(question.as_dict(), ensure_ascii=False))
+
+    def get_current_question(self, chat_id: int) -> QuestionDC:
+        value = self.redis.get(States.current_question + str(chat_id))
+        return QuestionDC(**json.loads(value.decode()))
+
+    def set_current_answer_id(self, chat_id: int, answer_id: int) -> None:
+        self.redis.set(States.current_answer_id + str(chat_id), answer_id)
+
+    def get_current_answer_id(self, chat_id: int) -> int:
+        value = self.redis.get(States.current_answer_id + str(chat_id))
+        return int(value.decode())
 
     def set_current_answer(self, chat_id: int, answer: AnswerDC) -> None:
         assert answer.is_correct
