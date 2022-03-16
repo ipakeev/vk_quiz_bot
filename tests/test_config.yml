@@ -17,6 +17,7 @@ vk_bot:
   token: group_token
   group_id: 1
   animate_timer: False
+  beautiful: False
   sleep_before_show_variants: 3
   sleep_before_show_answer: 10
   long_poller_wait: 20
