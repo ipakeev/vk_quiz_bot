@@ -236,10 +236,13 @@ async def main_menu(msg: MessageCallback, payload: MainMenuPayload):
 
     await msg.games.restore_status(msg.chat_id)
     if payload.new:
-        if payload.source == BotActions.main_menu:
-            await msg.edit(Texts.goodbye)
+        if msg.app.config.vk_bot.beautiful:
+            if payload.source == BotActions.main_menu:
+                await msg.edit(Texts.goodbye)
+            else:
+                await msg.edit(msg.states.get_previous_text(msg.chat_id))
         else:
-            await msg.edit(msg.states.get_previous_text(msg.chat_id))
+            await msg.event_ok()
         await msg.send(attachment=Photos.main_wallpaper, keyboard=keyboards.main_menu())
     else:
         await msg.edit(attachment=Photos.main_wallpaper, keyboard=keyboards.main_menu())
@@ -364,7 +367,10 @@ async def choose_theme(msg: MessageCallback, payload: ChooseThemePayload):
 
     user = msg.states.get_user_info(msg.states.get_who_s_turn(msg.chat_id))
     if payload.new:
-        await msg.edit(msg.states.get_previous_text(msg.chat_id))
+        if msg.app.config.vk_bot.beautiful:
+            await msg.edit(msg.states.get_previous_text(msg.chat_id))
+        else:
+            await msg.event_ok()
         await msg.send(f"👉🏻 {user.name}, выберите тему:", carousel=carousel)
     else:
         await msg.edit(f"👉🏻 {user.name}, выберите тему:", carousel=carousel)
@@ -461,13 +467,14 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
         [get_button()],
     ])
 
-    if msg.app.config.vk_bot.animate_timer:
-        for i in range(msg.app.config.vk_bot.sleep_before_show_variants, 0, -1):
-            await msg.edit(text + f"⏱ {i}...")
-            await asyncio.sleep(1.0)
-    else:
-        await msg.edit(text)
-        await asyncio.sleep(msg.app.config.vk_bot.sleep_before_show_variants)
+    if msg.app.config.vk_bot.beautiful:
+        if msg.app.config.vk_bot.animate_timer:
+            for i in range(msg.app.config.vk_bot.sleep_before_show_variants, 0, -1):
+                await msg.edit(text + f"⏱ {i}...")
+                await asyncio.sleep(1.0)
+        else:
+            await msg.edit(text)
+            await asyncio.sleep(msg.app.config.vk_bot.sleep_before_show_variants)
 
     async def timer():
         if msg.app.config.vk_bot.animate_timer:
@@ -492,7 +499,8 @@ async def send_question(msg: MessageCallback, payload: SendQuestionPayload):
 @filter_game_id
 @filter_playing_users
 async def get_answer(msg: MessageCallback, payload: GetAnswerPayload):
-    if msg.states.get_current_question(msg.chat_id).id != payload.question_id:
+    question = msg.states.get_current_question(msg.chat_id)
+    if not question or question.id != payload.question_id:
         return await msg.show_snackbar(Texts.old_game_round)
 
     async with msg.states.locks.game_status(msg.chat_id):
@@ -524,7 +532,7 @@ async def get_answer(msg: MessageCallback, payload: GetAnswerPayload):
 @filter_playing_users
 async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
     question = msg.states.get_current_question(msg.chat_id)
-    if question.id != payload.question_id:
+    if not question or question.id != payload.question_id:
         return await msg.show_snackbar(Texts.old_game_round)
 
     is_passed = False
@@ -535,9 +543,13 @@ async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
     if not is_passed:
         return await msg.show_snackbar(Texts.too_late)
 
-    await msg.edit(f"Вопрос:{LINE_BREAK}🔎 {question.title}")
+    if msg.app.config.vk_bot.beautiful:
+        await msg.edit(f"Вопрос:{LINE_BREAK}🔎 {question.title}")
+    else:
+        await msg.event_ok()
+
     await msg.send(sticker_id=Stickers.dog_wait_sec)
-    await asyncio.sleep(2.0)
+    await asyncio.sleep(1.0)
 
     current_price = msg.states.get_current_price(msg.chat_id)
     answered_users_ids = msg.states.get_answered_users(msg.chat_id)
@@ -552,7 +564,6 @@ async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
                                              is_answered=payload.winner is not None)
 
     answer = msg.states.get_current_answer(msg.chat_id)
-    await msg.send(f"Правильный ответ:{LINE_BREAK}💡 {answer.title}{LINE_BREAK}📖 {answer.description}")
 
     text = ""
     if payload.winner is None:
@@ -571,7 +582,14 @@ async def show_answer(msg: MessageCallback, payload: ShowAnswerPayload):
 
     if not text:
         text = "Ответов не поступило... 💤"
-    await msg.send(f"Итоги раунда:{LINE_BREAK}" + text)
+
+    if msg.app.config.vk_bot.beautiful:
+        await msg.send(f"Правильный ответ:{LINE_BREAK}💡 {answer.title}{LINE_BREAK}📖 {answer.description}")
+        await msg.send(f"Итоги раунда:{LINE_BREAK}" + text)
+    else:
+        await msg.send(f"Правильный ответ:{LINE_BREAK}"
+                       f"💡 {answer.title}{LINE_BREAK}📖 {answer.description}{LINE_BREAK}{LINE_BREAK}"
+                       f"Итоги раунда:{LINE_BREAK}" + text)
 
     msg.states.question_ended(msg.chat_id)
     await show_scoreboard(msg, ShowScoreboardPayload(game_id=payload.game_id, new=True))
@@ -623,7 +641,10 @@ async def confirm_stop_game(msg: MessageCallback, payload: ConfirmStopGamePayloa
     if not is_passed:
         return await msg.show_snackbar(Texts.too_late)
 
-    await msg.delete()
+    if msg.app.config.vk_bot.beautiful:
+        await msg.delete()
+    else:
+        await msg.event_ok()
     await msg.send("Завершить игру?", keyboard=Keyboard(inline=True, buttons=[
         [
             CallbackButton("Да",
@@ -659,7 +680,7 @@ async def stop_game(msg: Union[MessageText, MessageCallback], payload: StopGameP
                 f"({user.n_correct_answers}:{user.n_wrong_answers}){LINE_BREAK}{LINE_BREAK}"
 
     if payload.new:
-        if isinstance(msg, MessageCallback):
+        if msg.app.config.vk_bot.beautiful and isinstance(msg, MessageCallback):
             await msg.edit(msg.states.get_previous_text(msg.chat_id))
         await msg.send(text, keyboard=keyboards.final_results())
     else:

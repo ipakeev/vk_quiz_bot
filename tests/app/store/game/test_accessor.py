@@ -43,10 +43,9 @@ class TestStateAccessor:
         assert application.store.states.get_game_id(chat_id) is None
         assert application.store.states.get_joined_users(chat_id) == []
         assert application.store.states.get_theme_chosen_prices(chat_id) == {}
+        assert application.store.states.get_current_question(chat_id) is None
         with pytest.raises(AttributeError):
             application.store.states.get_who_s_turn(chat_id)
-        with pytest.raises(AttributeError):
-            application.store.states.get_current_question(chat_id)
         with pytest.raises(AttributeError):
             application.store.states.get_current_price(chat_id)
         with pytest.raises(AttributeError):

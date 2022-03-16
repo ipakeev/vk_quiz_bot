@@ -146,8 +146,10 @@ class StateAccessor(BaseAccessor):
     def set_current_question(self, chat_id: int, question: QuestionDC) -> None:
         self.redis.set(States.current_question + str(chat_id), json.dumps(question.as_dict(), ensure_ascii=False))
 
-    def get_current_question(self, chat_id: int) -> QuestionDC:
+    def get_current_question(self, chat_id: int) -> Optional[QuestionDC]:
         value = self.redis.get(States.current_question + str(chat_id))
+        if not value:
+            return None
         return QuestionDC(**json.loads(value.decode()))
 
     def set_current_answer_id(self, chat_id: int, answer_id: int) -> None:
@@ -188,13 +190,13 @@ class StateAccessor(BaseAccessor):
 
     def is_flood_detected(self, chat_id: int) -> bool:
         """
-        По прошествии 10 минут можно пробовать снимать ограничения.
+        По прошествии 3 минут можно пробовать снимать ограничения.
         """
         detected_at = self.redis.get(States.flood + str(chat_id))
         if not detected_at:
             return False
         detected_at = datetime.fromisoformat(detected_at.decode())
-        if (now() - detected_at).total_seconds() > 60 * 10:
+        if (now() - detected_at).total_seconds() > 60 * 3:
             return False
         return True
 

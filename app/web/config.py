@@ -41,6 +41,7 @@ class VKBotConfig:
     token: str
     group_id: int
     animate_timer: bool  # set False to avoid 'Flood control: too much messages sent to user'
+    beautiful: bool
     sleep_before_show_variants: int
     sleep_before_show_answer: int
     long_poller_wait: int

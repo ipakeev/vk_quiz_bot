@@ -1,4 +1,3 @@
-# rename to "config.yml"
 web_session:
   key: GzPu8bfRRkI2FbjW_MWyn7vYcyDGWe4V6BUy2B3F_RA=
 admin:
@@ -6,20 +5,21 @@ admin:
   password: admin
 database:
   username: postgres
-  password: postgres
+  password: 123
   host: postgres
   port: 5432
-  database: postgres
+  database: gino
 redis:
   host: redis
   port: 6379
   db: 0
 vk_bot:
-  token: token
-  group_id: group_id
+  token: 037b5a7b8056173b9d4e7692f5642104f9eda45a460e3344e119fd3af8d3d3010265aac6b6dd0a2c1b21d
+  group_id: 210566950
   animate_timer: False
+  beautiful: False
   sleep_before_show_variants: 3
-  sleep_before_show_answer: 10
+  sleep_before_show_answer: 12
   long_poller_wait: 20
   updates_poller_queue_poller_sleep: 0.1
   updates_poller_gc_sleep: 10.0
